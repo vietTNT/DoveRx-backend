@@ -18,6 +18,7 @@ ALLOWED_HOSTS = [
     "localhost",
     "127.0.0.1",
     ".railway.app",
+    "doverx-backend-production.up.railway.app",
 ]
 
 # -----------------------------
@@ -136,9 +137,10 @@ CORS_ALLOWED_ORIGINS = [
 ]
 
 CSRF_TRUSTED_ORIGINS = [
-    "https://gracious-light-production.up.railway.app",
+    "https://doverx-backend-production.up.railway.app",
     "https://doverx.vercel.app",
 ]
+
 
 # -----------------------------
 # REST FRAMEWORK
