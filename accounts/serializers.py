@@ -57,11 +57,16 @@ class UserSerializer(serializers.ModelSerializer):
         data["gender"] = mapping.get(instance.gender, "") if instance.gender else ""
 
         # trả URL tuyệt đối cho avatar
+        # if instance.avatar and hasattr(instance.avatar, "url"):
+        #     url = instance.avatar.url
+        #     if request:
+        #         url = request.build_absolute_uri(url)
+        #     data["avatar"] = url
+        # else:
+        #     data["avatar"] = None
+        # trả URL tuyệt đối cho avatar
         if instance.avatar and hasattr(instance.avatar, "url"):
-            url = instance.avatar.url
-            if request:
-                url = request.build_absolute_uri(url)
-            data["avatar"] = url
+            data["avatar"] = instance.avatar.url   # Cloudinary đã trả HTTPS
         else:
             data["avatar"] = None
 

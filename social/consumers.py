@@ -196,7 +196,8 @@ class FeedConsumer(AsyncWebsocketConsumer):
     def delete_comment_sync(self, comment_id, user):
         """Xóa comment trong database (chỉ người tạo mới được xóa)"""
         try:
-            comment = Comment.objects.get(id=comment_id, user=user)
+            # comment = Comment.objects.get(id=comment_id, user=user)
+            comment = Comment.objects.get(id=comment_id, author=user)
             post_id = comment.post.id
             comment.delete()
             print(f"✅ [delete_comment_sync] Comment {comment_id} deleted from DB")

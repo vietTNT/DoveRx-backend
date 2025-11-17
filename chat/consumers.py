@@ -295,13 +295,16 @@ class ChatConsumer(AsyncWebsocketConsumer):
             conversation.save()
             
             # ✅ Build avatar URL
+            # avatar_url = None
+            # if self.user.avatar:
+            #     # Lấy base URL từ settings
+            #     from django.conf import settings
+            #     base_url = settings.SITE_URL if hasattr(settings, 'SITE_URL') else 'http://localhost:8000'
+            #     avatar_url = f"{base_url}{self.user.avatar.url}"
             avatar_url = None
-            if self.user.avatar:
-                # Lấy base URL từ settings
-                from django.conf import settings
-                base_url = settings.SITE_URL if hasattr(settings, 'SITE_URL') else 'http://localhost:8000'
-                avatar_url = f"{base_url}{self.user.avatar.url}"
-            
+            if self.user.avatar and hasattr(self.user.avatar, "url"):
+                avatar_url = self.user.avatar.url   # Cloudinary trả đúng URL HTTPS
+
             result = {
                 'id': message.id,
                 'conversation': message.conversation.id,

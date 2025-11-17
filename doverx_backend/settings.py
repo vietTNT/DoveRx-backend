@@ -43,6 +43,9 @@ INSTALLED_APPS = [
     "social_django",
     "social",
     "chat",
+
+    "cloudinary",
+    "cloudinary_storage",
 ]
 
 ASGI_APPLICATION = "doverx_backend.asgi.application"
@@ -88,6 +91,8 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
+# -----------------------------
+
 
 ROOT_URLCONF = "doverx_backend.urls"
 
@@ -120,11 +125,46 @@ DATABASES = {
 # -----------------------------
 # STATIC & MEDIA
 # -----------------------------
+# -----------------------------
+# STATIC & MEDIA (PRODUCTION)
+# -----------------------------
+
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
-MEDIA_URL = "/media/"
-MEDIA_ROOT = BASE_DIR / "media"
+# MEDIA_ROOT = BASE_DIR / "media"
+
+# Với Railway, MEDIA_URL phải có domain đầy đủ để không bị HTTP:
+# if not DEBUG:
+#     MEDIA_URL = "https://doverx-backend-production.up.railway.app/media/"
+# else:
+#     MEDIA_URL = "/media/"
+
+# Force Django nhận HTTPS từ Railway proxy
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+USE_X_FORWARDED_HOST = True
+
+# Cookie secure
+CSRF_COOKIE_SECURE = True
+SESSION_COOKIE_SECURE = True
+
+# HTTPS security
+SECURE_SSL_REDIRECT = False   # Railway tự redirect
+SECURE_HSTS_SECONDS = 31536000
+SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+SECURE_HSTS_PRELOAD = True
+
+
+import cloudinary
+import cloudinary.uploader
+import cloudinary.api
+
+cloudinary.config(
+    cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
+    api_key=os.getenv("CLOUDINARY_API_KEY"),
+    api_secret=os.getenv("CLOUDINARY_API_SECRET"),
+)
+DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
 
 # -----------------------------
 # CORS + CSRF
@@ -135,6 +175,7 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "https://doverx.vercel.app",
+    "https://doverx-backend-production.up.railway.app",
 ]
 
 CSRF_TRUSTED_ORIGINS = [

@@ -133,7 +133,8 @@ class PostViewSet(viewsets.ModelViewSet):
             visibility=request.data.get("visibility","public"),
         )
         for f in request.FILES.getlist("media"):
-            mt = "video" if (getattr(f,"content_type","").startswith("video")) else "image"
+            # mt = "video" if (getattr(f,"content_type","").startswith("video")) else "image"
+            mt = "video" if f.content_type.startswith("video") else "image"
             PostMedia.objects.create(post=p, file=f, media_type=mt)
         
         # Serialize post
