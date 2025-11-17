@@ -93,3 +93,7 @@ tzdata==2025.2
 sqlparse==0.5.3
 packaging==25.0
 certifi==2025.10.5
+
+#cloud
+cloudinary
+django-cloudinary-storage
