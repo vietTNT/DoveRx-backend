@@ -20,6 +20,7 @@ ALLOWED_HOSTS = [
     ".railway.app",
     "doverx-backend-production.up.railway.app",
     "doverx.vercel.app",
+    "*",
 ]
 
 # -----------------------------
@@ -82,8 +83,8 @@ SOCIAL_AUTH_GOOGLE_OAUTH2_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 # MIDDLEWARE
 # -----------------------------
 MIDDLEWARE = [
-    "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
+    "corsheaders.middleware.CorsMiddleware",  
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -131,6 +132,8 @@ DATABASES = {
 
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+MEDIA_URL = ''
+MEDIA_ROOT = None
 
 # MEDIA_ROOT = BASE_DIR / "media"
 
@@ -147,6 +150,7 @@ USE_X_FORWARDED_HOST = True
 # Cookie secure
 CSRF_COOKIE_SECURE = True
 SESSION_COOKIE_SECURE = True
+CSRF_COOKIE_HTTPONLY = False
 
 # HTTPS security
 SECURE_SSL_REDIRECT = False   # Railway tự redirect
@@ -222,3 +226,4 @@ SIMPLE_JWT = {
     "BLACKLIST_AFTER_ROTATION": True,
     "UPDATE_LAST_LOGIN": True,
 }
+SITE_URL = "https://doverx-backend-production.up.railway.app"
