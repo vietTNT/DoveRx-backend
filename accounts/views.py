@@ -273,7 +273,8 @@ def search_users(request):
             'username': user.username,
             'name': full_name or user.username,
             'email': user.email,
-            'avatar': request.build_absolute_uri(user.avatar.url) if user.avatar else None,
+            # 'avatar': request.build_absolute_uri(user.avatar.url) if user.avatar else None,
+            'avatar':user.avatar.url if user.avatar else None,
             'role': user.role,
             'friendship_status': friendship_status
         })
@@ -320,7 +321,8 @@ def get_friend_requests(request):
                 'id': user.id,
                 'username': user.username,
                 'name': full_name or user.username,
-                'avatar': request.build_absolute_uri(user.avatar.url) if user.avatar else None,
+                # 'avatar': request.build_absolute_uri(user.avatar.url) if user.avatar else None,
+                'avatar':user.avatar.url if user.avatar else None
             },
             'created_at': friendship.created_at
         })
@@ -431,7 +433,8 @@ def accept_friend_request(request):
             'username': friend.username,
             'name': full_name or friend.username,
             'email': friend.email,
-            'avatar': request.build_absolute_uri(friend.avatar.url) if friend.avatar else None,
+            # 'avatar': request.build_absolute_uri(friend.avatar.url) if friend.avatar else None,
+            'avatar':friend.avatar.url if friend.avatar else None,
             'role': friend.role,
             'online': is_online
         }
@@ -505,7 +508,8 @@ def get_friends(request):
             'username': friend.username,
             'name': full_name or friend.username,
             'email': friend.email,
-            'avatar': request.build_absolute_uri(friend.avatar.url) if friend.avatar else None,
+            # 'avatar': request.build_absolute_uri(friend.avatar.url) if friend.avatar else None,
+             'avatar':friend.avatar.url if friend.avatar else None,
             'role': friend.role,
             'online': is_online
         })
@@ -541,7 +545,8 @@ def get_users_list(request):
             'id': user.id,
             'name': full_name or user.username or user.email.split('@')[0],
             'email': user.email,
-            'avatar': request.build_absolute_uri(user.avatar.url) if user.avatar else None,
+            # 'avatar': request.build_absolute_uri(user.avatar.url) if user.avatar else None,
+            'avatar':user.avatar.url if user.avatar else None,
             'role': user.role,
             'online': is_online  # ✅ SỬA: Lấy từ database
         })
@@ -598,7 +603,8 @@ def get_user_by_id(request, user_id):
         'username': target_user.username,
         'name': full_name or target_user.username,
         'email': target_user.email,
-        'avatar': request.build_absolute_uri(target_user.avatar.url) if target_user.avatar else None,
+        # 'avatar': request.build_absolute_uri(target_user.avatar.url) if target_user.avatar else None,
+        'avatar':target_user.avatar.url if target_user.avatar else None,
         'role': target_user.role,
         'bio': getattr(target_user, 'bio', None),
         'specialty': getattr(target_user, 'specialty', None) if target_user.role == 'doctor' else None,

@@ -132,16 +132,15 @@ DATABASES = {
 
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
-MEDIA_URL = ''
-MEDIA_ROOT = None
 
-# MEDIA_ROOT = BASE_DIR / "media"
+
+MEDIA_ROOT = BASE_DIR / "media"
 
 # Với Railway, MEDIA_URL phải có domain đầy đủ để không bị HTTP:
-# if not DEBUG:
-#     MEDIA_URL = "https://doverx-backend-production.up.railway.app/media/"
-# else:
-#     MEDIA_URL = "/media/"
+if not DEBUG:
+    MEDIA_URL = "https://doverx-backend-production.up.railway.app/media/"
+else:
+    MEDIA_URL = "/media/"
 
 # Force Django nhận HTTPS từ Railway proxy
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
