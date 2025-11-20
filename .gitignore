@@ -20,3 +20,5 @@ media/
 .vscode/
 .idea/
 .env
+.env.local
+.env.prod

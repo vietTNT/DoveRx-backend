@@ -5,7 +5,7 @@ from accounts.models import User
 class UserBasicSerializer(serializers.ModelSerializer):
     """Serializer cơ bản cho User (dùng trong chat)"""
     name = serializers.SerializerMethodField()
-    avatar = serializers.SerializerMethodField()  # ✅ SỬA: Dùng SerializerMethodField
+    avatar = serializers.SerializerMethodField()  
     
     class Meta:
         model = User
@@ -16,13 +16,18 @@ class UserBasicSerializer(serializers.ModelSerializer):
         return full_name or obj.username
     
     def get_avatar(self, obj):
-        """✅ Trả về full URL cho avatar"""
-        request = self.context.get('request')
-        if obj.avatar and hasattr(obj.avatar, 'url'):
+        if obj.avatar:
+            # ✅ Kiểm tra nếu URL đã bắt đầu bằng http/https thì trả về luôn (Cloudinary)
+            if hasattr(obj.avatar, 'url'):
+                url = obj.avatar.url
+                if url.startswith("http"):
+                    return url
+            
+            # Nếu là file local, mới build absolute uri
+            request = self.context.get('request')
             if request:
-                return request.build_absolute_uri(obj.avatar.url)
-            # Fallback nếu không có request context
-            return obj.avatar.url
+                return request.build_absolute_uri(url)
+            return url
         return None
 
 class MessageSerializer(serializers.ModelSerializer):

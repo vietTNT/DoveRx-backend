@@ -1,3 +1,8 @@
-# import pymysql
-# # pymysql.version_info = (9, 3, 0, "final", 0)  # ép Django hiểu là MySQL 9.3
-# pymysql.install_as_MySQLdb()
+# import os
+
+# if os.getenv("USE_PYMYSQL", "True") == "True":
+#     try:
+#         import pymysql
+#         pymysql.install_as_MySQLdb()
+#     except Exception:
+#         pass
