@@ -172,16 +172,7 @@ SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 SECURE_HSTS_PRELOAD = True
 
 
-# import cloudinary
-# import cloudinary.uploader
-# import cloudinary.api
 
-# cloudinary.config(
-#     cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
-#     api_key=os.getenv("CLOUDINARY_API_KEY"),
-#     api_secret=os.getenv("CLOUDINARY_API_SECRET"),
-# )
-# DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
 try:
     import cloudinary
     import cloudinary.uploader
@@ -191,7 +182,7 @@ except Exception:
     CLOUDINARY_AVAILABLE = False
 
 if CLOUDINARY_AVAILABLE and os.getenv("CLOUDINARY_CLOUD_NAME") and IS_PRODUCTION:
-    INSTALLED_APPS += ["cloudinary", "cloudinary_storage"]
+  
     cloudinary.config(
         cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
         api_key=os.getenv("CLOUDINARY_API_KEY"),
