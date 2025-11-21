@@ -8,8 +8,12 @@ from rest_framework_simplejwt.views import (
     TokenRefreshView,
     TokenVerifyView,
 )
-
+from django.http import HttpResponse 
+# 👇 Thêm hàm này để hiển thị trang chủ
+def home(request):
+    return HttpResponse("<h1>🚀 DoveRx Backend is Running Successfully!</h1>") 
 urlpatterns = [
+    path('', home),
     path('admin/', admin.site.urls),
 
     # Các API chính
