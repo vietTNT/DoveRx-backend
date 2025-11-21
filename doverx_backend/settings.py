@@ -10,11 +10,12 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "dev-secret")
 
-DJANGO_ENV = os.getenv("DJANGO_ENV", "development")  # development | production
+# Mặc định là production để an toàn khi deploy
+DJANGO_ENV = os.getenv("DJANGO_ENV", "production")
 IS_PRODUCTION = DJANGO_ENV == "production"
 
-# DEBUG có thể override bằng .env
-DEBUG = os.getenv("DJANGO_DEBUG", "True") == "True" if not IS_PRODUCTION else False
+# DEBUG: False ở production, True ở dev
+DEBUG = os.getenv("DJANGO_DEBUG", "False") == "True"
 
 # -----------------------------
 # ALLOWED HOSTS
@@ -32,6 +33,7 @@ ALLOWED_HOSTS = [
 # APPLICATIONS
 # -----------------------------
 INSTALLED_APPS = [
+    "daphne", # ✅ Daphne nên đứng đầu để handle ASGI
     "channels",
     "django.contrib.admin",
     "django.contrib.auth",
@@ -49,7 +51,8 @@ INSTALLED_APPS = [
     "social_django",
     "social",
     "chat",
-
+    
+    # Các app Cloudinary (sẽ được check kỹ hơn ở dưới, nhưng khai báo ở đây cho chắc)
     "cloudinary",
     "cloudinary_storage",
 ]
@@ -57,17 +60,22 @@ INSTALLED_APPS = [
 ASGI_APPLICATION = "doverx_backend.asgi.application"
 
 # -----------------------------
-# CHANNEL LAYERS WITH REDIS
+# CHANNEL LAYERS (REDIS)
 # -----------------------------
-if os.getenv("REDIS_URL") and IS_PRODUCTION:
+# Ưu tiên Redis thật nếu có URL, nếu không thì fallback memory (chỉ dùng cho dev)
+if os.getenv("REDIS_URL"):
     CHANNEL_LAYERS = {
         "default": {
             "BACKEND": "channels_redis.core.RedisChannelLayer",
-            "CONFIG": {"hosts": [os.getenv("REDIS_URL")]},
+            "CONFIG": {
+                "hosts": [os.getenv("REDIS_URL")],
+                # Thêm capacity để tránh lỗi full queue khi chat nhiều
+                "capacity": 1500,
+                "expiry": 10,
+            },
         }
     }
 else:
-    # development: in-memory (single process)
     CHANNEL_LAYERS = {"default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}}
 
 # -----------------------------
@@ -86,7 +94,7 @@ SOCIAL_AUTH_GOOGLE_OAUTH2_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 # -----------------------------
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
-    # "whitenoise.middleware.WhiteNoiseMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",  # ✅ BẮT BUỘC MỞ DÒNG NÀY CHO RAILWAY
     "corsheaders.middleware.CorsMiddleware",  
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -95,8 +103,6 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
-# -----------------------------
-
 
 ROOT_URLCONF = "doverx_backend.urls"
 
@@ -116,82 +122,63 @@ TEMPLATES = [
 ]
 
 # -----------------------------
-# DATABASE (POSTGRESQL)
+# DATABASE
 # -----------------------------
 DATABASE_URL = os.getenv("DATABASE_URL")
 if DATABASE_URL:
     DATABASES = {
-        "default": dj_database_url.parse(DATABASE_URL, conn_max_age=600)
+        "default": dj_database_url.parse(DATABASE_URL, conn_max_age=600, conn_health_checks=True)
     }
 else:
-    # fallback dev MySQL (env vars có thể override)
+    # Fallback SQLite/MySQL cho local dev
     DATABASES = {
         "default": {
-            "ENGINE": "django.db.backends.mysql",
-            "NAME": os.getenv("MYSQL_DB", "doverx_db"),
-            "USER": os.getenv("MYSQL_USER", "root"),
-            "PASSWORD": os.getenv("MYSQL_PASSWORD", "1234"),
-            "HOST": os.getenv("MYSQL_HOST", "127.0.0.1"),
-            "PORT": os.getenv("MYSQL_PORT", "3306"),
-            "OPTIONS": {"charset": "utf8mb4"},
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
         }
     }
 
 # -----------------------------
-# STATIC & MEDIA
+# STATIC FILES (CSS, JS, Images)
 # -----------------------------
-# -----------------------------
-# STATIC & MEDIA (PRODUCTION)
-# -----------------------------
-
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+# Nén file tĩnh cho nhẹ web
+STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
-
+# -----------------------------
+# MEDIA & CLOUDINARY (QUAN TRỌNG NHẤT)
+# -----------------------------
+MEDIA_URL = "/media/"  # Luôn để default, Cloudinary sẽ override khi cần
 MEDIA_ROOT = BASE_DIR / "media"
 
-# Với Railway, MEDIA_URL phải có domain đầy đủ để không bị HTTP:
-if not DEBUG:
-    MEDIA_URL = "https://doverx-backend-production.up.railway.app/media/"
-else:
-    MEDIA_URL = "/media/"
+# Lấy cấu hình từ biến môi trường
+CLOUDINARY_STORAGE_CONF = {
+    'CLOUD_NAME': os.getenv('CLOUDINARY_CLOUD_NAME'),
+    'API_KEY': os.getenv('CLOUDINARY_API_KEY'),
+    'API_SECRET': os.getenv('CLOUDINARY_API_SECRET'),
+}
 
-# Force Django nhận HTTPS từ Railway proxy
-SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
-USE_X_FORWARDED_HOST = True
-
-# Cookie secure
-CSRF_COOKIE_SECURE = True
-SESSION_COOKIE_SECURE = True
-CSRF_COOKIE_HTTPONLY = False
-
-# HTTPS security
-SECURE_SSL_REDIRECT = False   # Railway tự redirect
-SECURE_HSTS_SECONDS = 31536000
-SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-SECURE_HSTS_PRELOAD = True
-
-
-
-try:
+# 🔥 LOGIC ÉP BUỘC DÙNG CLOUDINARY NẾU CÓ KEY
+if CLOUDINARY_STORAGE_CONF['CLOUD_NAME'] and CLOUDINARY_STORAGE_CONF['API_KEY']:
     import cloudinary
     import cloudinary.uploader
     import cloudinary.api
-    CLOUDINARY_AVAILABLE = True
-except Exception:
-    CLOUDINARY_AVAILABLE = False
-
-if CLOUDINARY_AVAILABLE and os.getenv("CLOUDINARY_CLOUD_NAME") and IS_PRODUCTION:
-  
+    
     cloudinary.config(
-        cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
-        api_key=os.getenv("CLOUDINARY_API_KEY"),
-        api_secret=os.getenv("CLOUDINARY_API_SECRET"),
+        cloud_name=CLOUDINARY_STORAGE_CONF['CLOUD_NAME'],
+        api_key=CLOUDINARY_STORAGE_CONF['API_KEY'],
+        api_secret=CLOUDINARY_STORAGE_CONF['API_SECRET'],
+        secure=True
     )
-    DEFAULT_FILE_STORAGE = "cloudinary_storage.storage.MediaCloudinaryStorage"
+    
+    DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
+    print(f"☁️ [Storage] Đang sử dụng Cloudinary: {CLOUDINARY_STORAGE_CONF['CLOUD_NAME']}")
 else:
-    # local filesystem for development
-    DEFAULT_FILE_STORAGE = "django.core.files.storage.FileSystemStorage"
+    # Chỉ dùng local khi KHÔNG CÓ key (Cảnh báo sẽ mất dữ liệu trên Railway)
+    DEFAULT_FILE_STORAGE = 'django.core.files.storage.FileSystemStorage'
+    print("⚠️ [Storage] Cảnh báo: Đang dùng Local Storage (Chưa nhập Cloudinary Key)")
+
 
 # -----------------------------
 # CORS + CSRF
@@ -209,7 +196,6 @@ CSRF_TRUSTED_ORIGINS = [
     "https://doverx-backend-production.up.railway.app",
     "https://doverx.vercel.app",
 ]
-
 
 # -----------------------------
 # REST FRAMEWORK
@@ -229,7 +215,7 @@ REST_FRAMEWORK = {
 AUTH_USER_MODEL = "accounts.User"
 
 # -----------------------------
-# EMAIL
+# EMAIL CONFIG
 # -----------------------------
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 EMAIL_HOST = "smtp.gmail.com"
@@ -249,5 +235,6 @@ SIMPLE_JWT = {
     "BLACKLIST_AFTER_ROTATION": True,
     "UPDATE_LAST_LOGIN": True,
 }
+
 SITE_URL = "https://doverx-backend-production.up.railway.app"
 SECURE_CROSS_ORIGIN_OPENER_POLICY = "same-origin-allow-popups"
