@@ -50,8 +50,8 @@ INSTALLED_APPS = [
     "social",
     "chat",
 
-    # "cloudinary",
-    # "cloudinary_storage",
+    "cloudinary",
+    "cloudinary_storage",
 ]
 
 ASGI_APPLICATION = "doverx_backend.asgi.application"
