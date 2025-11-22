@@ -38,54 +38,7 @@ class ProfileAPIView(APIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 
-# 🟡 Cập nhật thông tin hồ sơ
-# class UpdateProfileAPIView(APIView):
-#     permission_classes = [IsAuthenticated]
 
-#     def put(self, request):
-#         user = request.user
-#         serializer = UserSerializer(user, data=request.data, partial=True)
-
-#         if serializer.is_valid():
-#             serializer.save()
-#             return Response(serializer.data, status=status.HTTP_200_OK)
-
-#         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
-
-# class UpdateProfileAPIView(generics.UpdateAPIView):
-#     queryset = User.objects.all()
-#     serializer_class = UserSerializer
-#     permission_classes = [IsAuthenticated]
-#     parser_classes = [MultiPartParser, FormParser]
-
-#     def get_object(self):
-#         return self.request.user
-
-#     def put(self, request, *args, **kwargs):
-#         user = self.get_object()
-#         serializer = self.get_serializer(user, data=request.data, partial=True)
-#         if serializer.is_valid():
-#             serializer.save()
-#             return Response(serializer.data, status=status.HTTP_200_OK)
-#         print("❌ Serializer errors:", serializer.errors)
-#         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-#     def create(self, request, *args, **kwargs):
-#         data = request.data.copy()
-#         data["role"] = "doctor"  # ✅ mặc định là bác sĩ
-
-#         serializer = self.get_serializer(data=data)
-#         serializer.is_valid(raise_exception=True)
-#         user = serializer.save()
-
-#         return Response(
-#             {
-#                 "message": "Tài khoản bác sĩ được tạo thành công.",
-#                 "user": serializer.data,
-#             },
-#             status=status.HTTP_201_CREATED,
-#         )
 from rest_framework.parsers import MultiPartParser, FormParser
 class UpdateProfileAPIView(generics.UpdateAPIView):
     queryset = User.objects.all()

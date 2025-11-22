@@ -1,7 +1,7 @@
 from django.conf import settings
 from django.db import models
 from django.utils import timezone
-
+from cloudinary_storage.storage import MediaCloudinaryStorage
 REACTION_CHOICES = [
     ("like", "Like"), ("love", "Love"), ("haha", "Haha"),
     ("wow", "Wow"), ("sad", "Sad"), ("angry", "Angry"), ("care", "Care"),
@@ -17,8 +17,11 @@ class Post(models.Model):
 
 class PostMedia(models.Model):
     post = models.ForeignKey(Post, on_delete=models.CASCADE, related_name="media")
-    file = models.FileField(upload_to="posts/")
-    media_type = models.CharField(max_length=10)  # image | video
+    file = models.FileField(
+        upload_to="posts/",
+        storage=MediaCloudinaryStorage()    
+    )
+    media_type = models.CharField(max_length=10)
 
 class PostReaction(models.Model):
     post = models.ForeignKey(Post, on_delete=models.CASCADE, related_name="reactions")

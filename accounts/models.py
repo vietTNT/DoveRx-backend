@@ -4,7 +4,7 @@ from django.utils import timezone
 import uuid
 import random
 import datetime
-
+from cloudinary_storage.storage import MediaCloudinaryStorage
 class User(AbstractUser):
     ROLE_CHOICES = [
         ('admin', 'Admin'),
@@ -30,7 +30,13 @@ class User(AbstractUser):
     is_verified = models.BooleanField(default=False)
 
     # --- Thông tin cá nhân ---
-    avatar = models.ImageField(upload_to='avatars/', null=True, blank=True)
+    # avatar = models.ImageField(upload_to='avatars/', null=True, blank=True)
+    avatar = models.ImageField(
+    upload_to='avatars/',
+    storage=MediaCloudinaryStorage(),
+    null=True,
+    blank=True
+    )
     bio = models.TextField(blank=True, null=True)
     gender = models.CharField(max_length=10, choices=GENDER_CHOICES, blank=True, null=True)
     age = models.PositiveIntegerField(blank=True, null=True)
