@@ -48,38 +48,45 @@ class PostMediaSerializer(serializers.ModelSerializer):
         model = PostMedia
         fields = ["id", "url", "type"]
     
-    # def get_url(self, obj):
-    #     req = self.context.get("request")
-    #     url = obj.file.url
-    #     return req.build_absolute_uri(url) if req else url
     def get_url(self, obj):
         try:
-            # Lấy URL gốc từ thư viện (thường mặc định là /image/ hoặc /auto/)
+            if not obj.file:
+                return None
+
+            # Lấy URL gốc
             url = obj.file.url
             
-            # ✅ FIX QUAN TRỌNG: Ép kiểu URL theo media_type trong Database
-            if obj.media_type == 'video':
-                # Nếu DB bảo là video, ta thay thế mọi tiền tố sai thành /video/
-                url = url.replace("/image/upload/", "/video/upload/")
-                url = url.replace("/auto/upload/", "/video/upload/")
-            else:
-                # Nếu là ảnh
-                url = url.replace("/auto/upload/", "/image/upload/")
+            # ✅ FIX AN TOÀN: Kiểm tra kỹ trước khi replace
+            if url:
+                # Logic ép kiểu Video
+                if obj.media_type == 'video':
+                    url = url.replace("/image/upload/", "/video/upload/")
+                    url = url.replace("/auto/upload/", "/video/upload/")
+                else:
+                    url = url.replace("/auto/upload/", "/image/upload/")
             
-            # Logic build absolute URI (giữ nguyên của bạn)
+            # Build absolute URI
             req = self.context.get("request")
-            if req and not url.startswith("http"):
+            if req and url and not url.startswith("http"):
                 return req.build_absolute_uri(url)
             return url
             
         except Exception as e:
-            print(f"Error getting URL: {e}")
-            return None
-    def get_type(self, obj):
-        name = (obj.file.name or "").lower()
-        ct = getattr(obj.file, "content_type", "") or ""
-        return "video" if (ct.startswith("video") or name.endswith((".mp4", ".mov", ".webm", ".mkv"))) else "image"
+            # 🔥 In lỗi ra terminal backend để debug, nhưng KHÔNG làm sập app
+            print(f"⚠️ Error getting Media URL for Media ID {obj.id}: {e}")
+            return "https://cdn-icons-png.flaticon.com/512/3135/3135715.png" # Trả về ảnh lỗi thay vì crash
 
+    def get_type(self, obj):
+        try:
+            if not obj.file: 
+                return "image"
+                
+            # Logic cũ của bạn
+            name = (obj.file.name or "").lower()
+            ct = getattr(obj.file, "content_type", "") or ""
+            return "video" if (ct.startswith("video") or name.endswith((".mp4", ".mov", ".webm", ".mkv"))) else "image"
+        except:
+            return "image"
 
 class CommentSerializer(serializers.ModelSerializer):
     user = serializers.SerializerMethodField()
