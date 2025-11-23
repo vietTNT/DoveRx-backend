@@ -48,11 +48,33 @@ class PostMediaSerializer(serializers.ModelSerializer):
         model = PostMedia
         fields = ["id", "url", "type"]
     
+    # def get_url(self, obj):
+    #     req = self.context.get("request")
+    #     url = obj.file.url
+    #     return req.build_absolute_uri(url) if req else url
     def get_url(self, obj):
-        req = self.context.get("request")
-        url = obj.file.url
-        return req.build_absolute_uri(url) if req else url
-    
+        try:
+            # Lấy URL gốc từ thư viện (thường mặc định là /image/ hoặc /auto/)
+            url = obj.file.url
+            
+            # ✅ FIX QUAN TRỌNG: Ép kiểu URL theo media_type trong Database
+            if obj.media_type == 'video':
+                # Nếu DB bảo là video, ta thay thế mọi tiền tố sai thành /video/
+                url = url.replace("/image/upload/", "/video/upload/")
+                url = url.replace("/auto/upload/", "/video/upload/")
+            else:
+                # Nếu là ảnh
+                url = url.replace("/auto/upload/", "/image/upload/")
+            
+            # Logic build absolute URI (giữ nguyên của bạn)
+            req = self.context.get("request")
+            if req and not url.startswith("http"):
+                return req.build_absolute_uri(url)
+            return url
+            
+        except Exception as e:
+            print(f"Error getting URL: {e}")
+            return None
     def get_type(self, obj):
         name = (obj.file.name or "").lower()
         ct = getattr(obj.file, "content_type", "") or ""
@@ -127,38 +149,59 @@ class PostSerializer(serializers.ModelSerializer):
     time = serializers.DateTimeField(source="created_at", format="%Y-%m-%dT%H:%M:%S%z")
     content = serializers.SerializerMethodField()
     reaction_counts = serializers.SerializerMethodField()
+    
+    # 👇 Giữ cái cũ (trả về object {type, icon...})
     my_reaction = serializers.SerializerMethodField()
+    
+    # ✅ THÊM CÁI MỚI: Trả về string đơn giản ("like", "love"...) để khớp với logic Frontend
+    user_reaction = serializers.SerializerMethodField() 
+    
     comments_count = serializers.IntegerField(source="comments.count", read_only=True)
 
     class Meta:
         model = Post
         fields = [
             "id", "author", "time", "content", "images",
-            "reaction_counts", "my_reaction", "comments_count", "kind"
+            "reaction_counts", 
+            "my_reaction",      # Object đầy đủ
+            "user_reaction",    # String đơn giản (quan trọng cho logic check like)
+            "comments_count", "kind"
         ]
 
     def get_content(self, o):
         return o.content_medical if o.kind == "medical" else (o.content_text or "")
     
     def get_reaction_counts(self, o):
-        """Đếm reactions theo từng loại"""
         agg = o.reactions.values("type").order_by().annotate(count=models.Count("id"))
         return {x["type"]: x["count"] for x in agg}
     
-    # ✅ SỬA: Trả về đúng icon/label
-    def get_my_reaction(self, o):
-        """Reaction của user hiện tại"""
+    # ✅ Hàm mới: Trả về string reaction type (ví dụ: "like")
+    def get_user_reaction(self, o):
         req = self.context.get("request")
         if not req or not req.user.is_authenticated:
             return None
         
-        r = o.reactions.filter(user=req.user).first()
-        if not r:
+        # Cách tối ưu: Tìm trong prefetch (nếu view đã prefetch)
+        # Nếu view chưa prefetch, nó sẽ query DB (chấp nhận được với số lượng nhỏ)
+        for reaction in o.reactions.all():
+            if reaction.user_id == req.user.id:
+                return reaction.type # Trả về string: "like", "love", ...
+        return None
+
+    # Hàm cũ: Trả về object { type, icon, label }
+    def get_my_reaction(self, o):
+        req = self.context.get("request")
+        if not req or not req.user.is_authenticated:
             return None
         
-        display = get_reaction_display(r.type)
+        # Tận dụng logic tìm kiếm giống bên trên
+        rtype = self.get_user_reaction(o) 
+        if not rtype:
+            return None
+        
+        display = get_reaction_display(rtype)
         return {
-            "type": r.type,
+            "type": rtype,
             "icon": display['icon'],
             "label": display['label']
         }

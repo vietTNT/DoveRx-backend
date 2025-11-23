@@ -243,3 +243,5 @@ SIMPLE_JWT = {
 
 SITE_URL = "https://doverx-backend-production.up.railway.app"
 SECURE_CROSS_ORIGIN_OPENER_POLICY = "same-origin-allow-popups"
+DATA_UPLOAD_MAX_MEMORY_SIZE = 100 * 1024 * 1024  # 100MB
+FILE_UPLOAD_MAX_MEMORY_SIZE = 100 * 1024 * 1024  # 100MB
