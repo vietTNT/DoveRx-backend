@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from .models import Conversation, Message
 from accounts.models import User
+import mimetypes
 
 class UserBasicSerializer(serializers.ModelSerializer):
     """Serializer cơ bản cho User (dùng trong chat)"""
@@ -17,13 +18,19 @@ class UserBasicSerializer(serializers.ModelSerializer):
     
     def get_avatar(self, obj):
         if obj.avatar:
-            # ✅ Kiểm tra nếu URL đã bắt đầu bằng http/https thì trả về luôn (Cloudinary)
             if hasattr(obj.avatar, 'url'):
                 url = obj.avatar.url
-                if url.startswith("http"):
-                    return url
+                
+                # 1. Ép về HTTPS
+                if url.startswith("http:"):
+                    url = url.replace("http:", "https:")
+                
+                # 2. Xóa '/media/' thừa nếu có (trường hợp avatar cũng bị lỗi này)
+                if "cloudinary.com" in url and "/media/" in url:
+                    url = url.replace("/media/", "/")
+                
+                return url
             
-            # Nếu là file local, mới build absolute uri
             request = self.context.get('request')
             if request:
                 return request.build_absolute_uri(url)
@@ -33,34 +40,58 @@ class UserBasicSerializer(serializers.ModelSerializer):
 class MessageSerializer(serializers.ModelSerializer):
     """Serializer cho Message"""
     sender = UserBasicSerializer(read_only=True)
-    
+    attachment = serializers.SerializerMethodField()
+
     class Meta:
         model = Message
-        fields = ['id', 'conversation', 'sender', 'text', 'created_at', 'is_read']
+        fields = ['id', 'conversation', 'sender', 'text', 'attachment', 'created_at', 'is_read']
         read_only_fields = ['id', 'sender', 'created_at']
-    
-    def to_representation(self, instance):
-        """Ensure consistent output format"""
-        data = super().to_representation(instance)
-        
-        # ✅ Đảm bảo luôn có sender object đầy đủ
-        if not data.get('sender') or not isinstance(data.get('sender'), dict):
-            request = self.context.get('request')
-            avatar_url = None
-            if instance.sender.avatar:
-                if request:
-                    avatar_url = request.build_absolute_uri(instance.sender.avatar.url)
-                else:
-                    avatar_url = instance.sender.avatar.url
-            
-            data['sender'] = {
-                'id': instance.sender.id,
-                'username': instance.sender.username,
-                'name': instance.sender.get_full_name() or instance.sender.username,
-                'avatar': avatar_url
-            }
-        
-        return data
+
+    def get_attachment(self, obj):
+        """
+        Trả về object { url: ..., type: ... } và FIX MỌI LỖI URL (Auto, Media, Http)
+        """
+        if obj.attachment:
+            try:
+                # 1. Lấy URL gốc từ storage
+                file_url = obj.attachment.url
+                
+                # 2. 🔥 FIX 1: Ép về HTTPS
+                if file_url.startswith("http:"):
+                    file_url = file_url.replace("http:", "https:")
+
+                # 3. 🔥 FIX 2: XÓA BỎ '/media/' THỪA (QUAN TRỌNG NHẤT LÚC NÀY)
+                # Django tự thêm /media/ vào trước, ta phải cắt đi để thành link Cloudinary chuẩn
+                if "cloudinary.com" in file_url and "/media/" in file_url:
+                    file_url = file_url.replace("/media/", "/")
+
+                # 4. Đoán loại file
+                try:
+                    file_name = obj.attachment.name.lower()
+                except:
+                    file_name = file_url.lower()
+
+                file_type = 'file'
+                if any(ext in file_name for ext in ['.mp4', '.mov', '.avi', '.webm', '.mkv', '.flv']):
+                    file_type = 'video'
+                elif any(ext in file_name for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tiff']):
+                    file_type = 'image'
+
+                # 5. 🔥 FIX 3: Sửa lỗi URL 'auto' của Cloudinary
+                if "/auto/upload/" in file_url:
+                    if file_type == 'video':
+                        file_url = file_url.replace("/auto/upload/", "/video/upload/")
+                    else:
+                        file_url = file_url.replace("/auto/upload/", "/image/upload/")
+                
+                return {
+                    "url": file_url,
+                    "type": file_type
+                }
+            except Exception as e:
+                print(f"❌ Serializer Error processing attachment: {e}")
+                return None
+        return None
 
 class ConversationSerializer(serializers.ModelSerializer):
     """Serializer cho Conversation"""

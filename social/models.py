@@ -3,6 +3,7 @@ from django.db import models
 from django.utils import timezone
 from django.core.validators import FileExtensionValidator
 from cloudinary_storage.storage import MediaCloudinaryStorage
+
 REACTION_CHOICES = [
     ("like", "Like"), ("love", "Love"), ("haha", "Haha"),
     ("wow", "Wow"), ("sad", "Sad"), ("angry", "Angry"), ("care", "Care"),
@@ -22,17 +23,8 @@ class Post(models.Model):
     created_at = models.DateTimeField(default=timezone.now)
 
 class PostMedia(models.Model):
-    # post = models.ForeignKey(Post, on_delete=models.CASCADE, related_name="media")
-    # file = models.FileField(
-    #     upload_to="posts/",
-    #     storage=MediaCloudinaryStorage(),
-    #     validators=[FileExtensionValidator(allowed_extensions=['jpg','jpeg','png','gif','mp4','mov','webm'])]
-    # )
-    # media_type = models.CharField(max_length=10, choices=[('image','image'), ('video','video')], blank=True)
-    # created_at = models.DateTimeField(default=timezone.now)
     post = models.ForeignKey(Post, on_delete=models.CASCADE, related_name="media")
     
-    # 🔥 2. SỬA LẠI TRƯỜNG FILE: Dùng MixedMediaCloudinaryStorage
     file = models.FileField(
         upload_to="posts/",
         storage=MixedMediaCloudinaryStorage(), # ✅ Thay MediaCloudinaryStorage bằng cái này

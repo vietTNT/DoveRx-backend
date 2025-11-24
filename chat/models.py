@@ -1,6 +1,6 @@
 from django.db import models
 from accounts.models import User
-
+from .storage import MixedMediaCloudinaryStorage
 class Conversation(models.Model):
     """
     Model đại diện cho cuộc trò chuyện giữa 2 người dùng
@@ -40,7 +40,15 @@ class Message(models.Model):
         related_name='messages'
     )
     sender = models.ForeignKey(User, on_delete=models.CASCADE)
-    text = models.TextField()
+    text = models.TextField(blank=True, null=True)
+
+    attachment = models.FileField(
+        upload_to='chat_attachments/',     
+        storage=MixedMediaCloudinaryStorage(),
+        blank=True, 
+        null=True
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     is_read = models.BooleanField(default=False)
     

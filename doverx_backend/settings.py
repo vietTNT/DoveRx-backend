@@ -16,7 +16,7 @@ if DJANGO_ENV == "production":
 else:
     load_dotenv(BASE_DIR / ".env.local")
 
-IS_PRODUCTION = DJANGO_ENV == "production"
+IS_PRODUCTION = DJANGO_ENV == "production"  
 
 # =========================================================
 # SECRET KEY + DEBUG

@@ -2,8 +2,12 @@ from django.shortcuts import render
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
+from rest_framework.parsers import MultiPartParser, FormParser
 from django.db.models import Q, Max, Count
 from django.db import models
+from django.core.files.storage import default_storage
+import cloudinary
+import cloudinary.uploader
 from .models import Conversation, Message
 from .serializers import ConversationSerializer, MessageSerializer
 from accounts.models import User
@@ -17,7 +21,7 @@ def get_conversations(request):
     Lấy danh sách tất cả conversations của user hiện tại
     
     GET /api/chat/conversations/
-    
+
     Returns:
     [
         {
@@ -215,3 +219,52 @@ def mark_messages_as_read(request):
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def upload_chat_attachment(request):
+    """
+    API Upload file cho chat -> Đẩy thẳng lên Cloudinary
+    POST /api/chat/upload/
+    Body: form-data { file: ... }
+    """
+    try:
+        file_obj = request.FILES.get('file')
+        if not file_obj:
+            return Response({'error': 'No file provided'}, status=400)
+
+        # 1. Xác định loại file để Cloudinary xử lý tối ưu
+        content_type = file_obj.content_type
+        resource_type = 'raw' # Mặc định
+        file_type = 'file'    # Trả về cho frontend
+
+        if content_type.startswith('image/'):
+            resource_type = 'image'
+            file_type = 'image'
+        elif content_type.startswith('video/'):
+            resource_type = 'video'
+            file_type = 'video'
+
+        print(f"☁️ [Upload] Đang đẩy file {file_obj.name} lên Cloudinary (Type: {resource_type})...")
+
+        # 2. Upload trực tiếp bằng SDK của Cloudinary
+        upload_result = cloudinary.uploader.upload(
+            file_obj, 
+            folder="chat_attachments", # Thư mục trên Cloudinary
+            resource_type=resource_type 
+        )
+
+        # 3. Lấy URL HTTPS an toàn
+        file_url = upload_result.get('secure_url')
+        
+        print(f"✅ [Upload] Thành công: {file_url}")
+
+        return Response({
+            'url': file_url,
+            'type': file_type
+        })
+
+    except Exception as e:
+        print(f"❌ Upload error: {e}")
+        import traceback
+        print(traceback.format_exc())
+        return Response({'error': str(e)}, status=500)
