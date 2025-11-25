@@ -1,16 +1,4 @@
-🏥 DoveRx - Medical Social Network & Forum
-🔗 Live Demo: https://doverx.vercel.app
-
-DoveRx is a comprehensive medical social network platform that connects health-conscious users with medical professionals (Doctors, Medical Students). The system enables Q&A, knowledge sharing, online health consultations, and personal medical record management.
-
-This repository contains the Full-stack source code for the project, including the Backend (Django) and Frontend (React.js).
-
-🌐 System Overview
-DoveRx operates on a decoupled Client-Server architecture:
-
-Frontend: React.js (Single Page Application) providing a modern, optimized user experience, deployed on Vercel.
-
-Backend: RESTful API built with Django Rest # 🏥 DoveRx - Medical Social Network & Forum
+# 🏥 DoveRx - Medical Social Network & Forum
 
 [![Live Demo](https://img.shields.io/badge/Live_Demo-doverx.vercel.app-2563eb?style=for-the-badge&logo=vercel)](https://doverx.vercel.app)
 
