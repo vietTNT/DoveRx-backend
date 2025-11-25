@@ -81,11 +81,11 @@ Database: PostgreSQL (Neon), Redis.
 
 Storage: Cloudinary.
 
-📂 Project Structure
+## 📂 Project Structure
+
 Monorepo Structure:
 
-Bash
-
+```bash
 DOVERX/
 ├── Backend/                # Django Project
 │   ├── accounts/           # Auth, User, Profile, Friend logic
