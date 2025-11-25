@@ -2,7 +2,7 @@ from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.db import transaction
-from django.db.models import Count  # ✅ Move lên đầu file
+from django.db.models import Count 
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 from .models import Post, PostMedia, PostReaction, Comment, CommentReaction, Share
@@ -23,7 +23,7 @@ class PostViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(author=self.request.user)
 
-    # ✅ QUAN TRỌNG: Thêm method này để truyền request vào serializer
+    
     # Giúp PostSerializer.get_user_reaction hoạt động đúng
     def get_serializer_context(self):
         context = super().get_serializer_context()
@@ -48,22 +48,42 @@ class PostViewSet(viewsets.ModelViewSet):
             mt = "video" if f.content_type.startswith("video") else "image"
             PostMedia.objects.create(post=p, file=f, media_type=mt)
         
-        # ✅ Lấy context chuẩn từ viewset
+        # Lấy context chuẩn từ viewset
         serializer = self.get_serializer(p)
         post_data = serializer.data
         
         self._broadcast('new_post', {'post': post_data})
         return Response(post_data, status=201)
 
+
+
     def update(self, request, *args, **kwargs):
         instance = self.get_object()
+        
+        #  Kiểm tra quyền sở hữu
         if instance.author != request.user:
             return Response({'error': 'Bạn chỉ có thể chỉnh sửa bài viết của mình'}, status=403)
         
-        response = super().update(request, *args, **kwargs)
-        self._broadcast('update_post', {'post': response.data})
-        return response
-
+        # 2. Cập nhật nội dung bài viết
+        new_content = request.data.get("content")
+        
+        if new_content is not None:
+            # Chỉ cho phép sửa text của bài viết thường (normal)
+            if instance.kind == "normal":
+                instance.content_text = new_content
+                instance.save() # Lưu ngay vào DB
+        
+        # 3. Gọi hàm update gốc để xử lý các trường khác (nếu có)
+        kwargs['partial'] = True
+        super().update(request, *args, **kwargs)
+        
+        # 4. Lấy dữ liệu mới nhất sau khi sửa để trả về
+        serializer = self.get_serializer(instance)
+        
+        # 5. Broadcast thông báo WebSocket (quan trọng)
+        self._broadcast('update_post', {'post': serializer.data})
+        
+        return Response(serializer.data)
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
         if instance.author != request.user:
@@ -140,7 +160,7 @@ class CommentViewSet(viewsets.GenericViewSet):
     permission_classes = [permissions.IsAuthenticated]
     serializer_class = CommentSerializer
 
-    # ✅ Thêm context để serializer lấy được request user (quan trọng cho comment reaction)
+    # Thêm context để serializer lấy được request user (quan trọng cho comment reaction)
     def get_serializer_context(self):
         context = super().get_serializer_context()
         context.update({"request": self.request})
@@ -167,7 +187,7 @@ class CommentViewSet(viewsets.GenericViewSet):
             parent_id=parent_id or None
         )
         
-        # ✅ Lấy data từ serializer (có context)
+        # Lấy data từ serializer (có context)
         comment_data = self.get_serializer(c).data
         
         self._broadcast('new_comment', {

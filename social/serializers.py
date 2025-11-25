@@ -56,7 +56,7 @@ class PostMediaSerializer(serializers.ModelSerializer):
             # Lấy URL gốc
             url = obj.file.url
             
-            # ✅ FIX AN TOÀN: Kiểm tra kỹ trước khi replace
+         
             if url:
                 # Logic ép kiểu Video
                 if obj.media_type == 'video':
