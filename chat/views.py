@@ -12,29 +12,22 @@ from .models import Conversation, Message
 from .serializers import ConversationSerializer, MessageSerializer
 from accounts.models import User
 from rest_framework.permissions import IsAuthenticated
-
+from django.db.models import Count
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_conversations(request):
     """
-    Lấy danh sách tất cả conversations của user hiện tại
-    
-    GET /api/chat/conversations/
-
-    Returns:
-    [
-        {
-            "id": 1,
-            "participants": [...],
-            "last_message": {...},
-            "unread_count": 5
-        }
-    ]
+    Lấy danh sách conversations và đếm số tin nhắn chưa đọc chính xác.
     """
     try:
         conversations = Conversation.objects.filter(
             participants=request.user
+        ).annotate(
+            unread_count=Count(
+                'messages',
+                filter=Q(messages__is_read=False) & ~Q(messages__sender=request.user)
+            )
         ).prefetch_related('participants').order_by('-updated_at')
         
         serializer = ConversationSerializer(
@@ -80,7 +73,7 @@ def get_conversation_with_user(request, user_id):
     print(f"   Current user: {request.user.username} (ID: {request.user.id})")
     print(f"   Other user: {other_user.username} (ID: {other_user.id})")
     
-    # ✅ SỬA: Query đúng để tìm conversation
+    #  đúng để tìm conversation
     # Tìm conversation có CẢ 2 user và chỉ có 2 user
     conversations = Conversation.objects.filter(
         participants=request.user
@@ -88,13 +81,16 @@ def get_conversation_with_user(request, user_id):
         participants=other_user
     )
     
-    # Lọc những conversation có đúng 2 participants
-    conversation = None
-    for conv in conversations:
-        if conv.participants.count() == 2:
-            conversation = conv
-            break
-    
+    conversation = Conversation.objects.annotate(
+    count=Count('participants')
+    ).filter(
+    count=2
+    ).filter(
+    participants=request.user
+    ).filter(
+        participants=other_user
+    ).first()
+ 
     # ✅ CHỈ TẠO MỚI NẾU CHƯA CÓ
     if not conversation:
         print(f"⚠️ [get_conversation_with_user] NO EXISTING CONVERSATION FOUND!")
@@ -166,59 +162,44 @@ def get_messages(request, conversation_id):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def mark_messages_as_read(request):
-    """
-    Đánh dấu tất cả tin nhắn trong conversation là đã đọc
+    """Đánh dấu tin nhắn là đã đọc (Backend Persistence)"""
+    conversation_id = request.data.get('conversation_id')
     
-    POST /api/chat/messages/mark_as_read/
-    Body: { "conversation_id": 1 }
+    if not conversation_id:
+        return Response({'error': 'conversation_id required'}, status=400)
     
-    Returns:
-    {
-        "success": true,
-        "marked_count": 5
-    }
-    """
+    #  FIX QUAN TRỌNG: Đảm bảo conversation_id là số nguyên hợp lệ
     try:
-        conversation_id = request.data.get('conversation_id')
-        
-        if not conversation_id:
-            return Response(
-                {'error': 'conversation_id is required'}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
+        conversation_id = int(conversation_id)
+    except ValueError:
+         return Response({'error': 'Invalid conversation_id format'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
         # Kiểm tra user có quyền truy cập conversation không
         conversation = Conversation.objects.filter(
             id=conversation_id,
             participants=request.user
         ).first()
-        
+
         if not conversation:
-            return Response(
-                {'error': 'Conversation not found or access denied'}, 
-                status=status.HTTP_404_NOT_FOUND
-            )
-        
-        # Đánh dấu đã đọc (chỉ tin nhắn từ người khác)
+             return Response({'error': 'Conversation not found or access denied'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Update Database: Đánh dấu tất cả tin nhắn từ người khác là đã đọc
         marked_count = Message.objects.filter(
             conversation_id=conversation_id,
             is_read=False
         ).exclude(sender=request.user).update(is_read=True)
         
-        print(f"✅ [mark_messages_as_read] Marked {marked_count} messages as read in conversation {conversation_id}")
+        print(f"✅ MARKED READ: Conversation {conversation_id}. Count: {marked_count}")
         
-        return Response({
-            'success': True,
-            'marked_count': marked_count
-        })
+        return Response({'success': True, 'marked_count': marked_count})
         
     except Exception as e:
-        print(f"❌ [mark_messages_as_read] Error: {e}")
+        print(f"❌ Error during mark_messages_as_read: {e}")
         return Response(
-            {'error': str(e)}, 
+            {'error': 'Server error during read update'}, 
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
-
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def upload_chat_attachment(request):

@@ -1,11 +1,10 @@
 from rest_framework import serializers
 from django.db import models
 from django.contrib.auth import get_user_model
-from .models import Post, PostMedia, PostReaction, Comment, CommentReaction, Share
-
+from .models import Post, PostMedia, PostReaction, Comment, CommentReaction, Share,Notification 
 User = get_user_model()
 
-# ✅ THÊM: Helper function để map reaction icon/label
+#  Helper function để map reaction icon/label
 def get_reaction_display(reaction_type):
     """Trả về icon và label tương ứng với loại reaction"""
     reaction_map = {
@@ -58,7 +57,7 @@ class PostMediaSerializer(serializers.ModelSerializer):
             
          
             if url:
-                # Logic ép kiểu Video
+                # Điều chỉnh URL dựa trên media_type
                 if obj.media_type == 'video':
                     url = url.replace("/image/upload/", "/video/upload/")
                     url = url.replace("/auto/upload/", "/video/upload/")
@@ -72,7 +71,7 @@ class PostMediaSerializer(serializers.ModelSerializer):
             return url
             
         except Exception as e:
-            # 🔥 In lỗi ra terminal backend để debug, nhưng KHÔNG làm sập app
+            #  In lỗi ra terminal backend để debug, nhưng KHÔNG làm sập app
             print(f"⚠️ Error getting Media URL for Media ID {obj.id}: {e}")
             return "https://cdn-icons-png.flaticon.com/512/3135/3135715.png" # Trả về ảnh lỗi thay vì crash
 
@@ -80,8 +79,7 @@ class PostMediaSerializer(serializers.ModelSerializer):
         try:
             if not obj.file: 
                 return "image"
-                
-            # Logic cũ của bạn
+          
             name = (obj.file.name or "").lower()
             ct = getattr(obj.file, "content_type", "") or ""
             return "video" if (ct.startswith("video") or name.endswith((".mp4", ".mov", ".webm", ".mkv"))) else "image"
@@ -90,19 +88,19 @@ class PostMediaSerializer(serializers.ModelSerializer):
 
 class CommentSerializer(serializers.ModelSerializer):
     user = serializers.SerializerMethodField()
-    author_id = serializers.IntegerField(source="author.id", read_only=True)  # ✅ THÊM
+    author_id = serializers.IntegerField(source="author.id", read_only=True)
     avatar = serializers.SerializerMethodField()
     time = serializers.DateTimeField(source="created_at", format="%Y-%m-%dT%H:%M:%S%z")
     likes = serializers.SerializerMethodField()
-    reaction_counts = serializers.SerializerMethodField()  # ✅ THÊM
+    reaction_counts = serializers.SerializerMethodField()  
     reaction = serializers.SerializerMethodField()
     replies = serializers.SerializerMethodField()
     
     class Meta:
         model = Comment
         fields = [
-            "id", "user", "author_id", "avatar", "text", "time",  # ✅ THÊM author_id
-            "likes", "reaction_counts", "reaction", "replies"      # ✅ THÊM reaction_counts
+            "id", "user", "author_id", "avatar", "text", "time", 
+            "likes", "reaction_counts", "reaction", "replies"      
         ]
     
     def get_user(self, o):
@@ -120,13 +118,13 @@ class CommentSerializer(serializers.ModelSerializer):
         """Tổng số reactions (tất cả loại)"""
         return o.reactions.count()
     
-    # ✅ THÊM: Đếm reactions theo từng loại
+    #  Đếm reactions theo từng loại
     def get_reaction_counts(self, o):
         """Trả về số lượng reactions theo từng loại"""
         agg = o.reactions.values("type").order_by().annotate(count=models.Count("id"))
         return {x["type"]: x["count"] for x in agg}
     
-    # ✅ SỬA: Trả về đúng icon/label
+    # Trả về đúng icon/label
     def get_reaction(self, o):
         """Reaction của user hiện tại"""
         req = self.context.get("request")
@@ -157,10 +155,10 @@ class PostSerializer(serializers.ModelSerializer):
     content = serializers.SerializerMethodField()
     reaction_counts = serializers.SerializerMethodField()
     
-    # 👇 Giữ cái cũ (trả về object {type, icon...})
+    #  Giữ cái cũ (trả về object {type, icon...})
     my_reaction = serializers.SerializerMethodField()
     
-    # ✅ THÊM CÁI MỚI: Trả về string đơn giản ("like", "love"...) để khớp với logic Frontend
+    #  Trả về string đơn giản ("like", "love"...) để khớp với logic Frontend
     user_reaction = serializers.SerializerMethodField() 
     
     comments_count = serializers.IntegerField(source="comments.count", read_only=True)
@@ -182,7 +180,7 @@ class PostSerializer(serializers.ModelSerializer):
         agg = o.reactions.values("type").order_by().annotate(count=models.Count("id"))
         return {x["type"]: x["count"] for x in agg}
     
-    # ✅ Hàm mới: Trả về string reaction type (ví dụ: "like")
+    # Hàm mới: Trả về string reaction type 
     def get_user_reaction(self, o):
         req = self.context.get("request")
         if not req or not req.user.is_authenticated:
@@ -212,3 +210,10 @@ class PostSerializer(serializers.ModelSerializer):
             "icon": display['icon'],
             "label": display['label']
         }
+class NotificationSerializer(serializers.ModelSerializer):
+    # Sử dụng UserBasicSerializer để hiển thị thông tin người gửi gọn nhẹ
+    sender = UserBasicSerializer(read_only=True)
+    
+    class Meta:
+        model = Notification
+        fields = ['id', 'sender', 'notification_type', 'post', 'comment', 'text','is_read', 'created_at']

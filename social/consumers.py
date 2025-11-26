@@ -1,23 +1,15 @@
 import json
-import asyncio  # ✅ THÊM DÒNG NÀY
+import asyncio
 import traceback
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
 from asgiref.sync import sync_to_async
 from django.contrib.auth.models import AnonymousUser
 from .models import Post, Comment, PostReaction, CommentReaction
-from .serializers import PostSerializer, CommentSerializer
 
 class FeedConsumer(AsyncWebsocketConsumer):
     """
-    Consumer xử lý feed real-time: posts, comments, reactions
-    
-    Events:
-    - new_post: Bài viết mới
-    - new_comment: Bình luận mới
-    - delete_comment: Xóa bình luận (chỉ người tạo mới được xóa)
-    - post_react: Thả cảm xúc trên post
-    - comment_react: Thả cảm xúc trên comment
+    Consumer xử lý feed real-time: posts, comments, reactions, notifications
     """
     
     async def connect(self):
@@ -31,9 +23,17 @@ class FeedConsumer(AsyncWebsocketConsumer):
             await self.close(code=4001)
             return
 
-        # Join public feed group
+        # 1. Join Public Feed Group (Nhận tin chung: bài mới, like nhảy số...)
         await self.channel_layer.group_add(
             self.feed_group_name,
+            self.channel_name
+        )
+
+        # 2. JOIN USER GROUP (QUAN TRỌNG: Để nhận thông báo cá nhân)
+       
+        self.user_group_name = f"user_{self.user.id}"
+        await self.channel_layer.group_add(
+            self.user_group_name,
             self.channel_name
         )
 
@@ -48,7 +48,6 @@ class FeedConsumer(AsyncWebsocketConsumer):
         
         # Start keepalive
         self.ping_task = asyncio.create_task(self.send_periodic_ping())
-        
         print(f"✅ FeedConsumer connected: {self.user.username}")
 
     async def disconnect(self, close_code):
@@ -56,10 +55,19 @@ class FeedConsumer(AsyncWebsocketConsumer):
         if self.ping_task:
             self.ping_task.cancel()
             
+        # Rời nhóm Public
         await self.channel_layer.group_discard(
             self.feed_group_name,
             self.channel_name
         )
+        
+        # Rời nhóm User (nếu có)
+        if hasattr(self, 'user_group_name'):
+            await self.channel_layer.group_discard(
+                self.user_group_name, 
+                self.channel_name
+            )
+            
         print(f"🔌 FeedConsumer disconnected: {self.user.username if self.user else 'Unknown'} (code: {close_code})")
 
     async def send_periodic_ping(self):
@@ -82,20 +90,17 @@ class FeedConsumer(AsyncWebsocketConsumer):
             data = json.loads(text_data)
             message_type = data.get('type')
             
-            print(f"📩 FeedConsumer received from {self.user.username}: {data}")
+            # print(f"📩 FeedConsumer received from {self.user.username}: {data}")
 
-            # ✅ Pong response
             if message_type == 'ping':
                 await self.send(text_data=json.dumps({
                     'type': 'pong',
                     'timestamp': data.get('timestamp')
                 }))
             
-            # ✅ Xóa bình luận
             elif message_type == 'delete_comment':
                 await self.handle_delete_comment(data)
             
-            # ✅ Typing indicator
             elif message_type == 'typing':
                 await self.channel_layer.group_send(
                     self.feed_group_name,
@@ -107,69 +112,72 @@ class FeedConsumer(AsyncWebsocketConsumer):
                         'is_typing': data.get('is_typing', True)
                     }
                 )
+                
             elif message_type == "post_react":
                 await self.handle_post_react(data)
 
             else:
-                await self.send(text_data=json.dumps({
-                    'type': 'error',
-                    'message': f'Unknown message type: {message_type}'
-                }))
+                # Ignore unknown types to prevent spamming client with errors
+                pass 
                 
         except json.JSONDecodeError:
-            await self.send(text_data=json.dumps({
-                'type': 'error',
-                'message': 'Invalid JSON'
-            }))
+            pass
         except Exception as e:
             print(f"❌ Error in receive: {e}")
             print(traceback.format_exc())
-            await self.send(text_data=json.dumps({
-                'type': 'error',
-                'message': str(e)
-            }))
+    async def send_notification(self, event):
+        """
+        Handler cho các thông báo chung (kết bạn, like, comment...)
+        """
+        data = event.get('data', {})
+        await self.send(text_data=json.dumps({
+            'type': 'notification',
+            'data': data
+        }))
+    # ==================== HANDLERS TỪ VIEWS GỬI SANG ====================
 
-    # ==================== HANDLERS ====================
+    async def feed_update(self, event):
+        """Broadcast feed update (Public) tới client"""
+        try:
+            await self.send(text_data=json.dumps({
+                'type': 'feed_update',
+                'data': event['data']
+            }))
+        except Exception as e:
+            print(f"❌ Error sending feed_update: {e}")
+
+    async def feed_notification(self, event):
+      
+        try:
+            # Views.py gửi type='feed_notification', ta forward xuống client
+            data = event.get('data', {})
+            await self.send(text_data=json.dumps({
+                'type': 'notification',
+                'data': data
+            }))
+        except Exception as e:
+            print(f"❌ Error sending notification: {e}")
+
+    async def user_typing(self, event):
+        """Broadcast typing status"""
+        try:
+            if event['user_id'] != self.user.id:
+                await self.send(text_data=json.dumps(event))
+        except Exception as e:
+            print(f"❌ Error sending typing: {e}")
+
+    # ==================== LOGIC XỬ LÝ (CLIENT GỬI LÊN) ====================
 
     async def handle_delete_comment(self, data):
-        """
-        Xóa bình luận (chỉ người tạo mới được xóa)
-        
-        Client gửi:
-        {
-            "type": "delete_comment",
-            "comment_id": 123
-        }
-        
-        Broadcast đến tất cả:
-        {
-            "type": "feed_update",
-            "data": {
-                "event": "delete_comment",
-                "post_id": 45,
-                "comment_id": 123
-            }
-        }
-        """
         try:
             comment_id = data.get('comment_id')
+            if not comment_id: return
             
-            if not comment_id:
-                await self.send(text_data=json.dumps({
-                    'type': 'error',
-                    'message': 'Missing comment_id'
-                }))
-                return
+            print(f"🗑️ User {self.user.username} deleting comment {comment_id}")
             
-            print(f"🗑️ [handle_delete_comment] User {self.user.username} deleting comment {comment_id}")
-            
-            # ✅ Xóa comment trong database (kiểm tra quyền)
             post_id = await self.delete_comment_sync(comment_id, self.user)
             
             if post_id:
-                print(f"✅ [handle_delete_comment] Deleted comment {comment_id} from post {post_id}")
-                
-                # ✅ Broadcast to public feed
                 await self.channel_layer.group_send(
                     'public_feed',
                     {
@@ -181,40 +189,14 @@ class FeedConsumer(AsyncWebsocketConsumer):
                         }
                     }
                 )
-            else:
-                print(f"❌ [handle_delete_comment] Failed to delete comment {comment_id}")
-                await self.send(text_data=json.dumps({
-                    'type': 'error',
-                    'message': 'Không thể xóa bình luận (không tồn tại hoặc không có quyền)'
-                }))
-                
         except Exception as e:
             print(f"❌ [handle_delete_comment] Error: {e}")
-            print(traceback.format_exc())
 
-    @sync_to_async
-    def delete_comment_sync(self, comment_id, user):
-        """Xóa comment trong database (chỉ người tạo mới được xóa)"""
-        try:
-            # comment = Comment.objects.get(id=comment_id, user=user)
-            comment = Comment.objects.get(id=comment_id, author=user)
-            post_id = comment.post.id
-            comment.delete()
-            print(f"✅ [delete_comment_sync] Comment {comment_id} deleted from DB")
-            return post_id
-        except Comment.DoesNotExist:
-            print(f"❌ [delete_comment_sync] Comment {comment_id} not found")
-            return None
-        except Exception as e:
-            print(f"❌ [delete_comment_sync] Error: {e}")
-            print(traceback.format_exc())
-            return None
     async def handle_post_react(self, data):
         post_id = data.get("post_id")
         reaction_type = data.get("reaction_type")
 
-        if not post_id:
-            return await self.send(text_data=json.dumps({"type": "error", "message": "Missing post_id"}))
+        if not post_id: return
 
         # Lưu DB
         await self.toggle_post_reaction_sync(post_id, self.user, reaction_type)
@@ -236,39 +218,44 @@ class FeedConsumer(AsyncWebsocketConsumer):
                 }
             }
         )
+    async def chat_new_message(self, event):
+    # Pass là an toàn nhất, chỉ đơn giản là bỏ qua thông điệp này
+        pass 
 
-    # ==================== EVENT HANDLERS ====================
+# Hàm này sẽ được gọi khi FeedConsumer nhận type: 'chat.user_typing'
+    async def chat_user_typing(self, event):
+    # Thông điệp chat typing, FeedConsumer không cần xử lý
+        pass
 
-    async def feed_update(self, event):
-        """Broadcast feed update tới client"""
+# Hàm này sẽ được gọi khi FeedConsumer nhận type: 'chat.messages_read'
+    async def chat_messages_read(self, event):
+    # Thông điệp đã đọc, FeedConsumer không cần xử lý
+        pass
+    # ==================== DATABASE SYNC METHODS ====================
+
+    @sync_to_async
+    def delete_comment_sync(self, comment_id, user):
         try:
-            await self.send(text_data=json.dumps({
-                'type': 'feed_update',
-                'data': event['data']
-            }))
-        except Exception as e:
-            print(f"❌ Error sending feed_update: {e}")
+            comment = Comment.objects.get(id=comment_id, author=user)
+            post_id = comment.post.id
+            comment.delete()
+            return post_id
+        except:
+            return None
 
-    async def user_typing(self, event):
-        """Broadcast typing status"""
-        try:
-            # Không gửi lại cho chính người đang typing
-            if event['user_id'] != self.user.id:
-                await self.send(text_data=json.dumps({
-                    'type': 'user_typing',
-                    'post_id': event['post_id'],
-                    'user_id': event['user_id'],
-                    'user_name': event['user_name'],
-                    'is_typing': event['is_typing']
-                }))
-        except Exception as e:
-            print(f"❌ Error sending typing: {e}")
-
-    # ==================== HELPER METHODS ====================
+    @sync_to_async
+    def toggle_post_reaction_sync(self, post_id, user, reaction_type):
+        if reaction_type is None:
+            PostReaction.objects.filter(post_id=post_id, user=user).delete()
+            return
+        PostReaction.objects.update_or_create(
+            post_id=post_id,
+            user=user,
+            defaults={"type": reaction_type}
+        )
 
     @sync_to_async
     def get_post_reactions(self, post_id):
-        """Lấy số lượng reactions của post"""
         try:
             reactions = PostReaction.objects.filter(post_id=post_id).values('type')
             reaction_counts = {}
@@ -276,32 +263,6 @@ class FeedConsumer(AsyncWebsocketConsumer):
                 reaction_type = r['type']
                 reaction_counts[reaction_type] = reaction_counts.get(reaction_type, 0) + 1
             return reaction_counts
-        except Exception as e:
-            print(f"❌ [get_post_reactions] Error: {e}")
+        except:
             return {}
-
-    @sync_to_async
-    def get_comment_reactions(self, comment_id):
-        """Lấy số lượng reactions của comment"""
-        try:
-            reactions = CommentReaction.objects.filter(comment_id=comment_id).values('type')
-            reaction_counts = {}
-            for r in reactions:
-                reaction_type = r['type']
-                reaction_counts[reaction_type] = reaction_counts.get(reaction_type, 0) + 1
-            return reaction_counts
-        except Exception as e:
-            print(f"❌ [get_comment_reactions] Error: {e}")
-            return {}
-    # lưu vào DB
-    @sync_to_async
-    def toggle_post_reaction_sync(self, post_id, user, reaction_type):
-        if reaction_type is None:
-            PostReaction.objects.filter(post_id=post_id, user=user).delete()
-            return
-
-        PostReaction.objects.update_or_create(
-            post_id=post_id,
-            user=user,
-            defaults={"type": reaction_type}
-        )
+    # Hàm này sẽ được gọi khi FeedConsumer nhận type: 'chat.new_message'

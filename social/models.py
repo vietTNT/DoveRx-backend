@@ -3,7 +3,7 @@ from django.db import models
 from django.utils import timezone
 from django.core.validators import FileExtensionValidator
 from cloudinary_storage.storage import MediaCloudinaryStorage
-
+from django.conf import settings
 REACTION_CHOICES = [
     ("like", "Like"), ("love", "Love"), ("haha", "Haha"),
     ("wow", "Wow"), ("sad", "Sad"), ("angry", "Angry"), ("care", "Care"),
@@ -16,7 +16,7 @@ class MixedMediaCloudinaryStorage(MediaCloudinaryStorage):
         return 'auto'
 class Post(models.Model):
     author = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="posts")
-    kind = models.CharField(max_length=20, default="normal")  # normal | medical
+    kind = models.CharField(max_length=20, default="normal")  
     content_text = models.TextField(blank=True, null=True)
     content_medical = models.JSONField(blank=True, null=True) 
     visibility = models.CharField(max_length=20, default="public")
@@ -27,7 +27,7 @@ class PostMedia(models.Model):
     
     file = models.FileField(
         upload_to="posts/",
-        storage=MixedMediaCloudinaryStorage(), # ✅ Thay MediaCloudinaryStorage bằng cái này
+        storage=MixedMediaCloudinaryStorage(), 
         validators=[FileExtensionValidator(allowed_extensions=['jpg','jpeg','png','gif','mp4','mov','webm'])]
     )
     
@@ -77,3 +77,33 @@ class Share(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     message = models.TextField(blank=True, null=True)
     created_at = models.DateTimeField(default=timezone.now)
+class Notification(models.Model):
+    TYPES = (
+        ('post_react', 'Thả cảm xúc bài viết'),
+        ('new_comment', 'Bình luận mới'),
+        ('comment_react', 'Thả cảm xúc bình luận'),
+        ('new_post', 'Bài đăng mới từ bạn bè'),
+        ('friend_request', 'Lời mời kết bạn'),
+        ('friend_accept', 'Chấp nhận kết bạn'),
+    )
+
+    #  Thay User bằng settings.AUTH_USER_MODEL
+    recipient = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='notifications') 
+    sender = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='sent_notifications')
+    
+    notification_type = models.CharField(max_length=20, choices=TYPES)
+    
+    # Các trường liên kết (Foreign Key) khác giữ nguyên, 
+    # nhưng nếu Post/Comment nằm cùng file này thì dùng tên class trực tiếp hoặc chuỗi 'Post'
+    post = models.ForeignKey('Post', on_delete=models.CASCADE, null=True, blank=True)
+    comment = models.ForeignKey('Comment', on_delete=models.CASCADE, null=True, blank=True)
+    
+    text = models.CharField(max_length=255)
+    is_read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Notif for {self.recipient}: {self.text}"

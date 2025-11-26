@@ -11,7 +11,7 @@ User = get_user_model()
 @database_sync_to_async
 def get_user_from_token(token_key):
     """
-    🔥 Xác thực JWT token cho WebSocket
+     Xác thực JWT token cho WebSocket
     """
     if not token_key:
         return AnonymousUser()
@@ -26,7 +26,7 @@ def get_user_from_token(token_key):
             
         user = User.objects.get(id=user_id)
         
-        # 🔥 Kiểm tra user còn active không
+        #  Kiểm tra user còn active không
         if not user.is_active:
             print(f"❌ User {user.username} is inactive")
             return AnonymousUser()
@@ -45,7 +45,7 @@ def get_user_from_token(token_key):
 
 class JWTAuthMiddleware(BaseMiddleware):
     """
-    🔥 Middleware xác thực JWT cho WebSocket
+     Middleware xác thực JWT cho WebSocket
     Hỗ trợ:
     - Query param: ?token=xxx
     - Header: Authorization: Bearer xxx

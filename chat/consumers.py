@@ -72,7 +72,18 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 
         except Exception as e:
             print(f"❌ [ChatConsumer] Exception: {e}")
-    
+    async def send_notification(self, event):
+        """
+        Handler for messages with type='send_notification' sent from views.py
+        """
+        try:
+            # Extract the 'data' payload from the event dictionary
+            data_to_send = event.get('data', {})
+            
+            # Send the data down to the WebSocket client (Frontend)
+            await self.send(text_data=json.dumps(data_to_send))
+        except Exception as e:
+            print(f"❌ Error sending notification: {e}")
     async def handle_send_message(self, data):
         try:
             conversation_id = data.get('conversation_id')
@@ -94,7 +105,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 await self.channel_layer.group_send(
                     f'user_{other_user_id}',
                     {
-                        'type': 'new_message',
+                        'type': 'chat.new_message',
                         'message': message_data
                     }
                 )
@@ -107,8 +118,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
             
         except Exception as e:
             print(f"❌ Handle send message error: {e}")
-
-    # ... (Giữ nguyên handle_typing, handle_mark_read, new_message, user_typing, messages_read) ...
+    async def feed_notification(self, event):
+        pass
     async def handle_typing(self, data):
         try:
             conversation_id = data.get('conversation_id')
@@ -117,7 +128,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             other_user_id = await self.get_other_user_id(conversation_id)
             if other_user_id:
                 await self.channel_layer.group_send(f'user_{other_user_id}', {
-                    'type': 'user_typing', 'conversation_id': conversation_id,
+                    'type': 'chat.user_typing', 'conversation_id': conversation_id,
                     'user_id': self.user.id, 'is_typing': is_typing
                 })
         except: pass
@@ -130,21 +141,23 @@ class ChatConsumer(AsyncWebsocketConsumer):
             other_user_id = await self.get_other_user_id(conversation_id)
             if other_user_id:
                 await self.channel_layer.group_send(f'user_{other_user_id}', {
-                    'type': 'messages_read', 'conversation_id': conversation_id, 'user_id': self.user.id
+                   'type': 'chat.messages_read', 'conversation_id': conversation_id, 'user_id': self.user.id
                 })
         except: pass
 
-    async def new_message(self, event):
+    async def chat_new_message(self, event):
+        # Đảm bảo gửi payload event['message'] ra ngoài (Consumer tiêu chuẩn)
         await self.send(text_data=json.dumps({'type': 'new_message', 'message': event['message']}))
 
-    async def user_typing(self, event):
+    async def chat_user_typing(self, event): 
+        # Gửi toàn bộ event ra ngoài, Front-end sẽ xử lý
         await self.send(text_data=json.dumps(event))
 
-    async def messages_read(self, event):
+    async def chat_messages_read(self, event):
         await self.send(text_data=json.dumps(event))
-
+    
     # =================================================================
-    # 🔥 HÀM QUAN TRỌNG ĐÃ SỬA: Dùng URL từ Client để tránh lỗi Media
+    #  Dùng URL từ Client để tránh lỗi Media
     # =================================================================
     @database_sync_to_async
     def save_message(self, conversation_id, text, attachment=None):
@@ -160,16 +173,17 @@ class ChatConsumer(AsyncWebsocketConsumer):
             message = Message(
                 conversation=conversation,
                 sender=self.user,
-                text=text
+                text=text,
+                is_read=False
             )
-
+        
             # Biến để lưu URL chuẩn trả về cho Frontend
             final_url = None
             final_type = 'file'
 
             # 1. Xử lý attachment
             if attachment and isinstance(attachment, dict):
-                # ✅ LẤY URL GỐC TỪ CLIENT (QUAN TRỌNG)
+               
                 # URL này là https://res.cloudinary.com/... đã đúng, không bị dính /media/
                 final_url = attachment.get('url')
                 final_type = attachment.get('type', 'file')
@@ -184,7 +198,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             conversation.save()
 
             # 3. Chuẩn bị dữ liệu trả về
-            # 🔥 NẾU CÓ URL TỪ CLIENT, DÙNG NÓ LUÔN (KHÔNG LẤY TỪ DB RA NỮA)
+            
             # Điều này tránh việc Django tự động thêm '/media/' vào URL
             att_data = None
             if final_url:
@@ -208,7 +222,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     att_data = {'url': message.attachment.url, 'type': 'file'}
                 except: pass
 
-            # Avatar
+                # Avatar
             avatar_url = None
             if self.user.avatar and hasattr(self.user.avatar, "url"):
                 avatar_url = self.user.avatar.url
@@ -227,7 +241,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 'text': message.text,
                 'created_at': message.created_at.isoformat(),
                 'is_read': message.is_read,
-                'attachment': att_data # ✅ URL chuẩn sạch sẽ
+                'attachment': att_data 
             }
             
         except Exception as e:

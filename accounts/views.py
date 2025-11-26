@@ -16,8 +16,9 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from .serializers import CustomTokenObtainPairSerializer
 from django.db.models import Q
-from .models import Friendship, UserStatus  # ✅ THÊM UserStatus
-
+from .models import Friendship, UserStatus 
+from channels.layers import get_channel_layer
+from asgiref.sync import async_to_sync
 User = get_user_model()
 
 
@@ -176,60 +177,60 @@ def remove_avatar(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def search_users(request):
-    """
-    Tìm kiếm users theo tên, email, username
-    
-    Query params:
-    - q: Search query
-    """
     query = request.GET.get('q', '').strip()
-    
     if not query or len(query) < 2:
         return Response({'results': []})
     
     current_user = request.user
     
-    # Tìm users matching query (trừ chính mình)
-    users = User.objects.filter(
+    # 1. Lấy list Users
+    users_qs = User.objects.filter(
         Q(username__icontains=query) |
         Q(first_name__icontains=query) |
         Q(last_name__icontains=query) |
         Q(email__icontains=query)
-    ).exclude(id=current_user.id)[:10]  # Giới hạn 10 kết quả
+    ).exclude(id=current_user.id)[:10]
+    target_users = list(users_qs) 
     
-    # Lấy trạng thái friendship với từng user
+    # Nếu không có user nào thì trả về rỗng luôn (đỡ tốn công query Friendship)
+    if not target_users:
+        return Response({'results': []})
+
+    # Lấy danh sách ID thuần (Python list)
+    target_user_ids = [u.id for u in target_users]
+    # 2. Lấy TẤT CẢ Friendship liên quan đến list users này trong 1 lần query
+    friendships = Friendship.objects.filter(
+        (Q(from_user=current_user) & Q(to_user_id__in=target_user_ids)) |
+        (Q(from_user_id__in=target_user_ids) & Q(to_user=current_user))
+    )
+
+    # 3. Tạo Map để tra cứu nhanh 
+    friend_map = {}
+    for f in friendships:
+        if f.from_user_id == current_user.id:
+            friend_map[f.to_user_id] = f.status  # Mình gửi
+        else:
+            friend_map[f.from_user_id] = f'received_{f.status}' # Họ gửi
+
     results = []
-    for user in users:
-        # Check nếu đã gửi friend request
-        sent_request = Friendship.objects.filter(
-            from_user=current_user,
-            to_user=user
-        ).first()
+    for user in target_users:
+        status = friend_map.get(user.id)
         
-        # Check nếu nhận được friend request
-        received_request = Friendship.objects.filter(
-            from_user=user,
-            to_user=current_user
-        ).first()
-        
-        # Xác định friendship status
-        friendship_status = None
-        if sent_request:
-            friendship_status = sent_request.status
-        elif received_request:
-            friendship_status = 'received_' + received_request.status
-        
+        avatar_url = None
+        try:
+            if user.avatar:
+                avatar_url = user.avatar.url
+        except:
+            pass
         full_name = f"{user.first_name} {user.last_name}".strip()
-        
         results.append({
             'id': user.id,
             'username': user.username,
             'name': full_name or user.username,
             'email': user.email,
-            # 'avatar': request.build_absolute_uri(user.avatar.url) if user.avatar else None,
-            'avatar':user.avatar.url if user.avatar else None,
+            'avatar': avatar_url,
             'role': user.role,
-            'friendship_status': friendship_status
+            'friendship_status': status
         })
     
     return Response({'results': results})
@@ -238,23 +239,7 @@ def search_users(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_friend_requests(request):
-    """
-    Lấy danh sách lời mời kết bạn đang chờ (status = pending)
-    
-    Returns:
-    [
-        {
-            "id": 1,
-            "from_user": {
-                "id": 2,
-                "username": "john",
-                "name": "John Doe",
-                "avatar": "http://..."
-            },
-            "created_at": "2025-11-15T10:30:00Z"
-        }
-    ]
-    """
+  
     current_user = request.user
     
     # Lấy các lời mời kết bạn mà user này nhận được
@@ -283,59 +268,144 @@ def get_friend_requests(request):
     return Response(requests)
 
 
+# @api_view(['POST'])
+# @permission_classes([IsAuthenticated])
+# def send_friend_request(request):
+#     """
+#     Gửi lời mời kết bạn
+#     Body: { "to_user_id": 123 }
+#     """
+#     to_user_id = request.data.get('to_user_id')
+    
+#     if not to_user_id:
+#         return Response(
+#             {'error': 'to_user_id is required'}, 
+#             status=status.HTTP_400_BAD_REQUEST
+#         )
+    
+#     if to_user_id == request.user.id:
+#         return Response(
+#             {'error': 'Cannot send friend request to yourself'}, 
+#             status=status.HTTP_400_BAD_REQUEST
+#         )
+    
+#     try:
+#         to_user = User.objects.get(id=to_user_id)
+#     except User.DoesNotExist:
+#         return Response(
+#             {'error': 'User not found'}, 
+#             status=status.HTTP_404_NOT_FOUND
+#         )
+    
+#     # Kiểm tra đã gửi lời mời chưa
+#     existing_request = Friendship.objects.filter(
+#         from_user=request.user,
+#         to_user=to_user
+#     ).first()
+    
+#     if existing_request:
+#         return Response(
+#             {'error': 'Friend request already sent'}, 
+#             status=status.HTTP_400_BAD_REQUEST
+#         )
+    
+#     # Tạo lời mời kết bạn
+#     friendship = Friendship.objects.create(
+#         from_user=request.user,
+#         to_user=to_user,
+#         status='pending'
+#     )
+    
+#     return Response({
+#         'message': 'Friend request sent',
+#         'friendship_id': friendship.id
+#     }, status=status.HTTP_201_CREATED)
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def send_friend_request(request):
     """
-    Gửi lời mời kết bạn
+    Gửi lời mời kết bạn & Bắn thông báo Realtime
     Body: { "to_user_id": 123 }
     """
     to_user_id = request.data.get('to_user_id')
     
     if not to_user_id:
-        return Response(
-            {'error': 'to_user_id is required'}, 
-            status=status.HTTP_400_BAD_REQUEST
-        )
+        return Response({'error': 'to_user_id is required'}, status=400)
     
-    if to_user_id == request.user.id:
-        return Response(
-            {'error': 'Cannot send friend request to yourself'}, 
-            status=status.HTTP_400_BAD_REQUEST
-        )
+    if int(to_user_id) == request.user.id:
+        return Response({'error': 'Cannot send friend request to yourself'}, status=400)
     
     try:
         to_user = User.objects.get(id=to_user_id)
     except User.DoesNotExist:
-        return Response(
-            {'error': 'User not found'}, 
-            status=status.HTTP_404_NOT_FOUND
-        )
+        return Response({'error': 'User not found'}, status=404)
     
-    # Kiểm tra đã gửi lời mời chưa
-    existing_request = Friendship.objects.filter(
-        from_user=request.user,
-        to_user=to_user
-    ).first()
-    
-    if existing_request:
-        return Response(
-            {'error': 'Friend request already sent'}, 
-            status=status.HTTP_400_BAD_REQUEST
-        )
-    
-    # Tạo lời mời kết bạn
-    friendship = Friendship.objects.create(
+    # Kiểm tra/Tạo lời mời (Dùng get_or_create để an toàn hơn)
+    friendship, created = Friendship.objects.get_or_create(
         from_user=request.user,
         to_user=to_user,
-        status='pending'
+        defaults={'status': 'pending'}
     )
-    
+
+    # Nếu đã tồn tại từ trước
+    if not created:
+        if friendship.status == 'rejected':
+            # Nếu từng bị từ chối, cho phép gửi lại
+            friendship.status = 'pending'
+            friendship.save()
+        elif friendship.status == 'accepted':
+            return Response({'message': 'Already friends'}, status=400)
+        elif friendship.status == 'pending':
+            return Response({'message': 'Friend request already sent'}, status=400)
+
+    # ==================================================================
+    # 2. GỬI WEBSOCKET (Code mới thêm)
+    # ==================================================================
+    try:
+        channel_layer = get_channel_layer()
+        
+        # Chuẩn bị dữ liệu hiển thị cho người nhận
+        # (Avatar, Tên người gửi để hiện trên thông báo)
+        user_avatar = None
+        if request.user.avatar:
+            try:
+                user_avatar = request.user.avatar.url
+                # Fix lỗi URL nếu cần (giống bên chat)
+                if user_avatar.startswith("http"):
+                    user_avatar = user_avatar.replace("http:", "https:")
+            except: pass
+
+        request_data = {
+            "id": friendship.id,
+            "from_user": {
+                "id": request.user.id,
+                "name": f"{request.user.first_name} {request.user.last_name}".strip() or request.user.username,
+                "avatar": user_avatar
+            },
+            "created_at": friendship.created_at.isoformat()
+        }
+
+        # Gửi đến group của người nhận: "user_{ID}"
+        async_to_sync(channel_layer.group_send)(
+            f"user_{to_user.id}", 
+            {
+                "type": "send_notification", # Hàm xử lý trong ChatConsumer
+                "data": {
+                    "event": "friend_request_received", # Frontend Navbar sẽ bắt event này
+                    "request_data": request_data
+                }
+            }
+        )
+        print(f"📡 [Socket] Đã gửi thông báo kết bạn tới user_{to_user.id}")
+
+    except Exception as e:
+        print(f"❌ [Socket Error] Không gửi được thông báo: {e}")
+    # ==================================================================
+
     return Response({
         'message': 'Friend request sent',
         'friendship_id': friendship.id
     }, status=status.HTTP_201_CREATED)
-
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -479,14 +549,14 @@ def get_users_list(request):
     """
     current_user = request.user
     
-    # ✅ SỬA: Dùng select_related để tối ưu query
+    #  Dùng select_related để tối ưu query
     users = User.objects.exclude(id=current_user.id).select_related('status')
     
     users_list = []
     for user in users:
         full_name = f"{user.first_name} {user.last_name}".strip()
         
-        # ✅ THÊM: Lấy trạng thái online
+        # Lấy trạng thái online
         is_online = False
         try:
             if hasattr(user, 'status'):
@@ -498,10 +568,10 @@ def get_users_list(request):
             'id': user.id,
             'name': full_name or user.username or user.email.split('@')[0],
             'email': user.email,
-            # 'avatar': request.build_absolute_uri(user.avatar.url) if user.avatar else None,
+           
             'avatar':user.avatar.url if user.avatar else None,
             'role': user.role,
-            'online': is_online  # ✅ SỬA: Lấy từ database
+            'online': is_online  # Lấy từ database
         })
     
     return Response(users_list)
@@ -515,7 +585,7 @@ def get_user_by_id(request, user_id):
     Bao gồm cả friendship status với current user
     """
     try:
-        target_user = User.objects.select_related('status').get(id=user_id)  # ✅ THÊM select_related
+        target_user = User.objects.select_related('status').get(id=user_id)  #  THÊM select_related
     except User.DoesNotExist:
         return Response(
             {'error': 'User not found'}, 
@@ -543,7 +613,7 @@ def get_user_by_id(request, user_id):
     
     full_name = f"{target_user.first_name} {target_user.last_name}".strip()
     
-    # ✅ THÊM: Lấy online status
+    #  Lấy online status
     is_online = False
     try:
         if hasattr(target_user, 'status'):
@@ -556,14 +626,14 @@ def get_user_by_id(request, user_id):
         'username': target_user.username,
         'name': full_name or target_user.username,
         'email': target_user.email,
-        # 'avatar': request.build_absolute_uri(target_user.avatar.url) if target_user.avatar else None,
+       
         'avatar':target_user.avatar.url if target_user.avatar else None,
         'role': target_user.role,
         'bio': getattr(target_user, 'bio', None),
         'specialty': getattr(target_user, 'specialty', None) if target_user.role == 'doctor' else None,
         'workplace': getattr(target_user, 'workplace', None) if target_user.role == 'doctor' else None,
         'friendship_status': friendship_status,
-        'online': is_online  # ✅ THÊM
+        'online': is_online  
     }
     
     return Response(user_data)
