@@ -19,17 +19,19 @@ from django.db.models import Q
 from .models import Friendship, UserStatus 
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
+from django.utils.text import slugify
+import uuid
 User = get_user_model()
 
 
-# 🟢 Đăng ký người dùng
+# Đăng ký người dùng
 class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
     serializer_class = RegisterSerializer
     permission_classes = [AllowAny]
 
 
-# 🟢 Lấy thông tin hồ sơ người dùng hiện tại
+#  Lấy thông tin hồ sơ người dùng hiện tại
 class ProfileAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -66,22 +68,25 @@ class DoctorRegisterView(APIView):
         print("📩 Dữ liệu nhận từ frontend:", data)
 
         try:
-            print("👉 BẮT ĐẦU KIỂM TRA EMAIL / USERNAME / PASSWORD")
+       
             email = data.get("email")
-            username = data.get("username")
             password = data.get("password")
 
-            if not email or not username or not password:
+            if not email or not password:
                 print("❌ Thiếu thông tin cơ bản")
-                return Response({"error": "Thiếu email, tên đăng nhập hoặc mật khẩu."},
+                return Response({"error": "Thiếu email hoặc mật khẩu."},
                                 status=status.HTTP_400_BAD_REQUEST)
 
             if User.objects.filter(email=email).exists():
                 print("❌ Email đã tồn tại:", email)
                 return Response( {"error": "Email đã tồn tại trong hệ thống."},
                                 status=status.HTTP_400_BAD_REQUEST,)
-
-            print("✅ Tạo user...")
+            # 3. Tự động sinh username từ email
+         
+            base_username = slugify(email.split('@')[0])
+            unique_suffix = str(uuid.uuid4())[:4] # Thêm 4 ký tự ngẫu nhiên để tránh trùng
+            username = f"{base_username}_{unique_suffix}"
+            
             user = User.objects.create_user(
                 username=username,
                 email=email,
@@ -95,13 +100,13 @@ class DoctorRegisterView(APIView):
                 phone=data.get("phone", ""),
                 license_number=data.get("license_number", ""),
             )
-            print("✅ USER ĐÃ TẠO:", user)
+         
 
-            print("🔹 Tạo mã OTP...")
+           
             user.generate_otp()
-            print("✅ OTP:", user.otp_code)
+          
 
-            print("✉️ Gửi mail tới:", user.email)
+           
             send_mail(
                 subject="🔐 Mã xác nhận tài khoản DoveRx của bạn",
                 message=f"Xin chào {user.first_name or user.username},\n\n"
@@ -112,7 +117,7 @@ class DoctorRegisterView(APIView):
                 fail_silently=False,
             )
 
-            print("✅ MAIL ĐÃ GỬI THÀNH CÔNG!")
+        
             return Response({"message": "Đăng ký thành công! Vui lòng kiểm tra email để xác minh tài khoản."},
                             status=status.HTTP_201_CREATED)
 
@@ -141,7 +146,6 @@ class VerifyOTPView(APIView):
             if timezone.now() > user.otp_expiry:
                 return Response({"error": "Mã xác nhận đã hết hạn."}, status=status.HTTP_400_BAD_REQUEST)
 
-            # ✅ Nếu hợp lệ
             user.is_verified = True
             user.otp_code = None
             user.save()
@@ -259,7 +263,6 @@ def get_friend_requests(request):
                 'id': user.id,
                 'username': user.username,
                 'name': full_name or user.username,
-                # 'avatar': request.build_absolute_uri(user.avatar.url) if user.avatar else None,
                 'avatar':user.avatar.url if user.avatar else None
             },
             'created_at': friendship.created_at
@@ -268,58 +271,6 @@ def get_friend_requests(request):
     return Response(requests)
 
 
-# @api_view(['POST'])
-# @permission_classes([IsAuthenticated])
-# def send_friend_request(request):
-#     """
-#     Gửi lời mời kết bạn
-#     Body: { "to_user_id": 123 }
-#     """
-#     to_user_id = request.data.get('to_user_id')
-    
-#     if not to_user_id:
-#         return Response(
-#             {'error': 'to_user_id is required'}, 
-#             status=status.HTTP_400_BAD_REQUEST
-#         )
-    
-#     if to_user_id == request.user.id:
-#         return Response(
-#             {'error': 'Cannot send friend request to yourself'}, 
-#             status=status.HTTP_400_BAD_REQUEST
-#         )
-    
-#     try:
-#         to_user = User.objects.get(id=to_user_id)
-#     except User.DoesNotExist:
-#         return Response(
-#             {'error': 'User not found'}, 
-#             status=status.HTTP_404_NOT_FOUND
-#         )
-    
-#     # Kiểm tra đã gửi lời mời chưa
-#     existing_request = Friendship.objects.filter(
-#         from_user=request.user,
-#         to_user=to_user
-#     ).first()
-    
-#     if existing_request:
-#         return Response(
-#             {'error': 'Friend request already sent'}, 
-#             status=status.HTTP_400_BAD_REQUEST
-#         )
-    
-#     # Tạo lời mời kết bạn
-#     friendship = Friendship.objects.create(
-#         from_user=request.user,
-#         to_user=to_user,
-#         status='pending'
-#     )
-    
-#     return Response({
-#         'message': 'Friend request sent',
-#         'friendship_id': friendship.id
-#     }, status=status.HTTP_201_CREATED)
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def send_friend_request(request):
