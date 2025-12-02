@@ -22,6 +22,7 @@ from asgiref.sync import async_to_sync
 from django.utils.text import slugify
 import uuid
 from django.db import transaction
+from .email_service import send_otp_email_brevo
 User = get_user_model()
 
 
@@ -104,17 +105,17 @@ class DoctorRegisterView(APIView):
 
                 # Tạo OTP
                 user.generate_otp()
-
+                send_otp_email_brevo(user)
                 # Gửi Mail (Nếu gửi lỗi sẽ nhảy xuống except và rollback user)
-                send_mail(
-                    subject="🔐 Mã xác nhận tài khoản DoveRx của bạn",
-                    message=f"Xin chào {user.first_name or user.username},\n\n"
-                            f"Mã xác nhận của bạn là: {user.otp_code}\n"
-                            f"Mã có hiệu lực trong 10 phút.\n\nCảm ơn bạn đã đăng ký DoveRx!",
-                    from_email=settings.DEFAULT_FROM_EMAIL,
-                    recipient_list=[user.email],
-                    fail_silently=False,
-                )
+                # send_mail(
+                #     subject="🔐 Mã xác nhận tài khoản DoveRx của bạn",
+                #     message=f"Xin chào {user.first_name or user.username},\n\n"
+                #             f"Mã xác nhận của bạn là: {user.otp_code}\n"
+                #             f"Mã có hiệu lực trong 10 phút.\n\nCảm ơn bạn đã đăng ký DoveRx!",
+                #     from_email=settings.DEFAULT_FROM_EMAIL,
+                #     recipient_list=[user.email],
+                #     fail_silently=False,
+                # )
 
             return Response(
                 {"message": "Đăng ký thành công! Vui lòng kiểm tra email để xác minh tài khoản."},
