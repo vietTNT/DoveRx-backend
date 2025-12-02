@@ -7,14 +7,14 @@ from datetime import timedelta
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # =========================================================
-# 🔥 LOAD ĐÚNG FILE .env THEO MÔI TRƯỜNG
+#  LOAD ĐÚNG FILE .env THEO MÔI TRƯỜNG
 # =========================================================
 DJANGO_ENV = os.getenv("DJANGO_ENV", "development")  # default local
 
 if DJANGO_ENV == "production":
     load_dotenv(BASE_DIR / ".env.prod")
 else:
-    load_dotenv(BASE_DIR / ".env.local")
+    load_dotenv(BASE_DIR / ".env.local")    
 
 IS_PRODUCTION = DJANGO_ENV == "production"  
 
@@ -201,11 +201,13 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "https://doverx.vercel.app",
+    "https://www.doverx.vercel.app",
 ]
 
 CSRF_TRUSTED_ORIGINS = [
     "https://doverx-backend-production.up.railway.app",
     "https://doverx.vercel.app",
+    "https://www.doverx.vercel.app",
 ]
 
 # =========================================================
