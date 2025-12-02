@@ -21,6 +21,7 @@ from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 from django.utils.text import slugify
 import uuid
+from django.db import transaction
 User = get_user_model()
 
 
@@ -67,65 +68,63 @@ class DoctorRegisterView(APIView):
         data = request.data
         print("📩 Dữ liệu nhận từ frontend:", data)
 
+        email = data.get("email")
+        password = data.get("password")
+
+        # 1. Validate cơ bản
+        if not email or not password:
+            return Response({"error": "Thiếu email hoặc mật khẩu."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if User.objects.filter(email=email).exists():
+            return Response({"error": "Email đã tồn tại trong hệ thống."}, status=status.HTTP_400_BAD_REQUEST)
+
         try:
-       
-            email = data.get("email")
-            password = data.get("password")
+            # 2. Bắt đầu Transaction (Nếu lỗi ở bất kỳ bước nào sẽ rollback, không tạo user rác)
+            with transaction.atomic():
+                # Tự động sinh username
+                base_username = slugify(email.split('@')[0]) or "user" # Fallback nếu slugify rỗng
+                unique_suffix = str(uuid.uuid4())[:4]
+                username = f"{base_username}_{unique_suffix}"
+                
+                # Tạo User
+                user = User.objects.create_user(
+                    username=username,
+                    email=email,
+                    password=password,
+                    first_name=data.get("first_name", ""),
+                    last_name=data.get("last_name", ""),
+                    role="doctor",
+                    doctor_type=data.get("doctorType"), 
+                    specialty=data.get("specialty", ""),
+                    workplace=data.get("workplace", ""),
+                    phone=data.get("phone", ""),
+                    license_number=data.get("license_number", ""),
+                    is_verified=False # Mặc định chưa xác minh
+                )
 
-            if not email or not password:
-                print("❌ Thiếu thông tin cơ bản")
-                return Response({"error": "Thiếu email hoặc mật khẩu."},
-                                status=status.HTTP_400_BAD_REQUEST)
+                # Tạo OTP
+                user.generate_otp()
 
-            if User.objects.filter(email=email).exists():
-                print("❌ Email đã tồn tại:", email)
-                return Response( {"error": "Email đã tồn tại trong hệ thống."},
-                                status=status.HTTP_400_BAD_REQUEST,)
-            # 3. Tự động sinh username từ email
-         
-            base_username = slugify(email.split('@')[0])
-            unique_suffix = str(uuid.uuid4())[:4] # Thêm 4 ký tự ngẫu nhiên để tránh trùng
-            username = f"{base_username}_{unique_suffix}"
-            
-            user = User.objects.create_user(
-                username=username,
-                email=email,
-                password=password,
-                first_name=data.get("first_name", ""),
-                last_name=data.get("last_name", ""),
-                role="doctor",
-                doctor_type=data.get("doctorType"),
-                specialty=data.get("specialty", ""),
-                workplace=data.get("workplace", ""),
-                phone=data.get("phone", ""),
-                license_number=data.get("license_number", ""),
+                # Gửi Mail (Nếu gửi lỗi sẽ nhảy xuống except và rollback user)
+                send_mail(
+                    subject="🔐 Mã xác nhận tài khoản DoveRx của bạn",
+                    message=f"Xin chào {user.first_name or user.username},\n\n"
+                            f"Mã xác nhận của bạn là: {user.otp_code}\n"
+                            f"Mã có hiệu lực trong 10 phút.\n\nCảm ơn bạn đã đăng ký DoveRx!",
+                    from_email=settings.DEFAULT_FROM_EMAIL,
+                    recipient_list=[user.email],
+                    fail_silently=False,
+                )
+
+            return Response(
+                {"message": "Đăng ký thành công! Vui lòng kiểm tra email để xác minh tài khoản."},
+                status=status.HTTP_201_CREATED
             )
-         
-
-           
-            user.generate_otp()
-          
-
-           
-            send_mail(
-                subject="🔐 Mã xác nhận tài khoản DoveRx của bạn",
-                message=f"Xin chào {user.first_name or user.username},\n\n"
-                        f"Mã xác nhận của bạn là: {user.otp_code}\n"
-                        f"Mã có hiệu lực trong 10 phút.\n\nCảm ơn bạn đã đăng ký DoveRx!",
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[user.email],
-                fail_silently=False,
-            )
-
-        
-            return Response({"message": "Đăng ký thành công! Vui lòng kiểm tra email để xác minh tài khoản."},
-                            status=status.HTTP_201_CREATED)
 
         except Exception as e:
             import traceback
-            print("❌ Lỗi khi đăng ký bác sĩ:", e)
             traceback.print_exc()
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": "Lỗi hệ thống: " + str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class VerifyOTPView(APIView):
     permission_classes = [AllowAny]
