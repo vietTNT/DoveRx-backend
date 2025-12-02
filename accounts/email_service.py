@@ -6,7 +6,7 @@ def send_otp_email_brevo(user):
     url = "https://api.brevo.com/v3/smtp/email"
 
     payload = {
-        "sender": {"name": "DoveRx", "email": "noreply@doverx.com"},
+        "sender": {"name": "DoveRx", "email": "trandacdaiviet@gmail.com"},
         "to": [{"email": user.email}],
         "subject": "🔐 Mã xác nhận tài khoản DoveRx",
         "htmlContent": f"""
