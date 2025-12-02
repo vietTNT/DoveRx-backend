@@ -165,9 +165,8 @@ class PostViewSet(BaseBroadcastViewSet, viewsets.ModelViewSet):
                 (Q(from_user=request.user) | Q(to_user=request.user)) & 
                 Q(status='accepted')
             )
-            
             for f in friendships:
-                # ✅ FIX LỖI: Xác định friend là ai
+               
                 friend = f.to_user if f.from_user == request.user else f.from_user
                 
                 self.create_notification(
